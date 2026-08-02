@@ -583,15 +583,25 @@ async function loadPortfolio(){
     html += `</div>`;
     for (const [slug, legs] of Object.entries(openEv)){
       const spent = legs.reduce((s,l)=>s+l.cost,0);
-      html += `<div class="card" style="margin-top:6px"><b>${slug}</b> · вложено $${spent.toFixed(2)}<table style="margin-top:4px"><tr><th>если сыграет</th><th>чистыми</th></tr>`;
-      const outs = legs.map(l=>l.bucket).concat(["любой другой исход"]);
-      for (const b of outs){
-        let ret = 0;
-        for (const l of legs) if ((l.outcome === "Yes") === (l.bucket === b)) ret += l.payout;
-        const net = ret - spent;
-        html += `<tr><td>${b}</td><td class="${net>=0?"pos":"neg"}">${net>=0?"+":"\u2212"}$${Math.abs(net).toFixed(2)}</td></tr>`;
+      html += `<div class="card" style="margin-top:6px"><b>${slug}</b> · вложено $${spent.toFixed(2)}`;
+      const exclusive = /^(highest|lowest)-temperature-|^how-many-/.test(slug);
+      if (exclusive){
+        html += `<table style="margin-top:4px"><tr><th>если сыграет</th><th>чистыми</th></tr>`;
+        const outs = legs.map(l=>l.bucket).concat(["любой другой исход"]);
+        for (const b of outs){
+          let ret = 0;
+          for (const l of legs) if ((l.outcome === "Yes") === (l.bucket === b)) ret += l.payout;
+          const net = ret - spent;
+          html += `<tr><td>${b}</td><td class="${net>=0?"pos":"neg"}">${net>=0?"+":"\u2212"}$${Math.abs(net).toFixed(2)}</td></tr>`;
+        }
+        html += `</table>`;
+      } else {
+        html += `<table style="margin-top:4px"><tr><th>нога</th><th>акций</th><th>вложено</th><th>вернёт если сыграет</th></tr>`;
+        for (const l of legs)
+          html += `<tr><td>${l.outcome === "No" ? "NO " : ""}${l.bucket}</td><td>${l.shares.toFixed(1)}</td><td>$${l.cost.toFixed(2)}</td><td>$${l.payout.toFixed(2)}</td></tr>`;
+        html += `</table><div style="font-size:12px;color:var(--ink-3);margin-top:2px">исходы этого рынка не взаимоисключающие (страйки) — общий расклад не строится</div>`;
       }
-      html += `</table></div>`;
+      html += `</div>`;
     }
     if (!Object.keys(openEv).length) html += `<div style="margin-top:6px;color:var(--ink-3)">Открытых позиций нет.</div>`;
     panel.innerHTML = html;

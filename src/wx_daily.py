@@ -226,11 +226,16 @@ def portfolio_scan(wallet=None):
     events = []
     for slug, legs in open_ev.items():
         spent = round(sum(l["cost"] for l in legs), 2)
-        scen = []
-        for b in [l["bucket"] for l in legs] + ["любой другой исход"]:
-            ret = sum(l["payout"] for l in legs
-                      if (l["outcome"] == "Yes") == (l["bucket"] == b))
-            scen.append(dict(если=b, чистыми=round(ret - spent, 2)))
+        # бакеты температуры и землетрясений взаимоисключающие; страйки крипты — НЕТ
+        # (BTC выше 120k и выше 130k сыграют одновременно), там таблица исходов была бы ложной
+        exclusive = bool(re.match(r"(highest|lowest)-temperature-|how-many-", slug or ""))
+        scen = None
+        if exclusive:
+            scen = []
+            for b in [l["bucket"] for l in legs] + ["любой другой исход"]:
+                ret = sum(l["payout"] for l in legs
+                          if (l["outcome"] == "Yes") == (l["bucket"] == b))
+                scen.append(dict(если=b, чистыми=round(ret - spent, 2)))
         events.append(dict(event=slug, spent=spent, legs=legs, scenarios=scen))
     spent_today = 0.0
     try:
