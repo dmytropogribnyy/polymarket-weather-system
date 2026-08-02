@@ -59,7 +59,9 @@ def allin(price, mp):
 # ---------- торговые параметры КОНКРЕТНОГО рынка (fail-closed) ----------
 # Те же правила, что в src/wx_daily.py. Код продублирован намеренно: сторож
 # запускается отдельным файлом и не может импортировать соседний модуль.
-MarketParams = namedtuple("MarketParams", "fee_rate tick min_order min_shares source")
+# min_notional — минимальный размер ордера в USDC (Gamma `orderMinSize`);
+# min_shares   — минимальное число акций за ордер (CLOB `minimum_order_size`).
+MarketParams = namedtuple("MarketParams", "fee_rate tick min_notional min_shares source")
 
 FEE_RATE_MAX = 0.20    # санитарный потолок ставки комиссии
 TICK_MAX = 0.10        # шаг цены крупнее 10¢ — данные битые
@@ -80,34 +82,73 @@ def _fee_rate(v):
     if v is None: return None
     return v/10000.0 if v > 1 else float(v)
 
+def _fee_rate_canonical(m):
+    """Каноническое расписание комиссий: feesEnabled + feeSchedule.rate."""
+    fees_enabled = m.get("feesEnabled")
+    if fees_enabled is None: return None, False
+    if not fees_enabled: return 0.0, True
+    schedule = m.get("feeSchedule") or {}
+    rate = _num(schedule, "rate")
+    if rate is None: return None, True
+    return float(rate), True
+
 def parse_market_params(m):
     """Ничего не подставляем по умолчанию: нет поля или значение вне
     санитарных границ — None, и рынок не торгуется."""
     if not isinstance(m, dict): return None
-    fee_rate = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
-                              "feeRateBps", "fee_rate_bps"))
+    canonical_rate, is_canonical = _fee_rate_canonical(m)
+    if is_canonical:
+        if canonical_rate is None: return None
+        legacy = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
+                                "feeRateBps", "fee_rate_bps"))
+        if legacy is not None and abs(legacy - canonical_rate) > 1e-9: return None
+        fee_rate = canonical_rate
+    else:
+        fee_rate = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
+                                  "feeRateBps", "fee_rate_bps"))
     tick = _num(m, "minimum_tick_size", "orderPriceMinTickSize", "mts", "tickSize")
-    min_order = _num(m, "minimum_order_size", "orderMinSize", "mos", "minimumOrderSize")
-    min_shares = _num(m, "minimum_order_size_shares", "minSharesSize", "minimumOrderShares") or 0.0
-    if fee_rate is None or tick is None or min_order is None: return None
+    min_notional = _num(m, "orderMinSize", "minimum_order_size", "mos", "minimumOrderSize")
+    if fee_rate is None or tick is None or min_notional is None: return None
     if not (0.0 <= fee_rate <= FEE_RATE_MAX): return None
     if not (0.0 < tick <= TICK_MAX): return None
-    if not (0.0 < min_order <= MIN_ORDER_MAX): return None
-    if min_shares < 0: return None
-    return MarketParams(fee_rate=fee_rate, tick=tick, min_order=min_order,
-                        min_shares=min_shares, source="market")
+    if not (0.0 < min_notional <= MIN_ORDER_MAX): return None
+    return MarketParams(fee_rate=fee_rate, tick=tick, min_notional=min_notional,
+                        min_shares=0.0, source="market")
 
 def market_params(m, fetch=None):
-    """Сначала поля Gamma, при нехватке — добор из CLOB по conditionId."""
+    """Нотионал (USDC) и шаг/комиссия из Gamma; min_shares (акции) из CLOB."""
     p = parse_market_params(m)
-    if p: return p
-    cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
-    if not cid: return None
-    try: raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
-    except Exception: return None
-    if not isinstance(raw, dict): return None
-    merged = dict(m); merged.update(raw)
-    return parse_market_params(merged)
+    if p is None:
+        gamma_notional = _num(m, "orderMinSize", "minimum_order_size", "mos", "minimumOrderSize")
+        if gamma_notional is None or not (0.0 < gamma_notional <= MIN_ORDER_MAX): return None
+        cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
+        if not cid: return None
+        try: raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
+        except Exception: return None
+        if not isinstance(raw, dict): return None
+        canonical_rate, is_canonical = _fee_rate_canonical(m)
+        fee_rate = canonical_rate if is_canonical else \
+                   (_fee_rate(_num(raw, "taker_base_fee", "takerBaseFee")) or
+                    _fee_rate(_num(m, "taker_base_fee", "takerBaseFee")))
+        tick = _num(raw, "minimum_tick_size", "orderPriceMinTickSize") or \
+               _num(m, "minimum_tick_size", "orderPriceMinTickSize")
+        if fee_rate is None or tick is None: return None
+        if not (0.0 <= fee_rate <= FEE_RATE_MAX): return None
+        if not (0.0 < tick <= TICK_MAX): return None
+        clob_shares = _num(raw, "minimum_order_size", "min_order_size") or 0.0
+        p = MarketParams(fee_rate=fee_rate, tick=tick, min_notional=gamma_notional,
+                         min_shares=clob_shares, source="clob")
+    else:
+        cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
+        if cid:
+            try:
+                raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
+                if isinstance(raw, dict):
+                    clob_shares = _num(raw, "minimum_order_size", "min_order_size") or 0.0
+                    if clob_shares > p.min_shares:
+                        p = p._replace(min_shares=clob_shares)
+            except Exception: pass
+    return p
 
 def event_params(markets, fetch=None):
     """Параметры обязаны быть у КАЖДОГО торгуемого бакета, иначе None.
@@ -121,7 +162,7 @@ def event_params(markets, fetch=None):
         ps.append(p)
     return MarketParams(fee_rate=max(p.fee_rate for p in ps),
                         tick=max(p.tick for p in ps),
-                        min_order=max(p.min_order for p in ps),
+                        min_notional=max(p.min_notional for p in ps),
                         min_shares=max(p.min_shares for p in ps),
                         source="event")
 
@@ -160,8 +201,8 @@ def check_arb_legs(legs, mp, fetch=None):
         return dict(res, ok=False, why="в книге нет объёма")
     if cost >= 1.0:
         return dict(res, ok=False, why=f"полная цена комплекта {cost:.3f} ≥ $1 — прибыли нет")
-    if any(allin(pr, mp)*sets + 1e-9 < mp.min_order for pr, _ in lots):
-        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_order:g} по каждой ноге")
+    if any(allin(pr, mp)*sets + 1e-9 < mp.min_notional for pr, _ in lots):
+        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_notional:g} по каждой ноге")
     return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
 def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25):

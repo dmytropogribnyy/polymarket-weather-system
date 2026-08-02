@@ -13,9 +13,9 @@ import watchdog as wd
 
 class FeeIsPerMarketTest(unittest.TestCase):
     def test_fee_uses_market_rate_not_a_constant(self):
-        cheap = wd.MarketParams(fee_rate=0.02, tick=0.01, min_order=1.0,
+        cheap = wd.MarketParams(fee_rate=0.02, tick=0.01, min_notional=1.0,
                                 min_shares=0.0, source="market")
-        rich = wd.MarketParams(fee_rate=0.10, tick=0.01, min_order=1.0,
+        rich = wd.MarketParams(fee_rate=0.10, tick=0.01, min_notional=1.0,
                                min_shares=0.0, source="market")
         self.assertAlmostEqual(wd.fee(0.5, cheap), 0.02*0.25)
         self.assertAlmostEqual(wd.fee(0.5, rich), 0.10*0.25)
@@ -56,7 +56,7 @@ class ParamsFailClosedTest(unittest.TestCase):
 
 
 class ExecutableArbTest(unittest.TestCase):
-    MP = wd.MarketParams(fee_rate=0.05, tick=0.01, min_order=1.0,
+    MP = wd.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0,
                          min_shares=0.0, source="event")
 
     def test_cheap_quotes_without_a_book_are_not_arbitrage(self):
@@ -82,7 +82,7 @@ class ExecutableArbTest(unittest.TestCase):
         # 0.49 + 0.49 = 0.98 «на бумаге», но с комиссией 5% комплект дороже $1
         f = FakeFetch({"book?token_id=a": book([(0.49, 500)]),
                        "book?token_id=b": book([(0.49, 500)])})
-        rich = wd.MarketParams(fee_rate=0.10, tick=0.01, min_order=1.0,
+        rich = wd.MarketParams(fee_rate=0.10, tick=0.01, min_notional=1.0,
                                min_shares=0.0, source="event")
         r = wd.check_arb_legs([("a", 0.49), ("b", 0.49)], rich, f)
         self.assertFalse(r["ok"])

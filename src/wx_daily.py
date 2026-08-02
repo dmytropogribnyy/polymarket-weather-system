@@ -189,7 +189,10 @@ def allin(price, mp):
     return price + fee(price, mp)
 
 # ---------- торговые параметры КОНКРЕТНОГО рынка (fail-closed) ----------
-MarketParams = namedtuple("MarketParams", "fee_rate tick min_order min_shares source")
+# min_notional — минимальный размер ордера в USDC (Gamma `orderMinSize`);
+# min_shares   — минимальное число акций за ордер (CLOB `minimum_order_size`).
+# Эти два ограничения из РАЗНЫХ источников, нельзя подменять одно другим.
+MarketParams = namedtuple("MarketParams", "fee_rate tick min_notional min_shares source")
 
 FEE_RATE_MAX = 0.20    # санитарный потолок ставки комиссии
 TICK_MAX = 0.10        # шаг цены крупнее 10¢ — данные битые
@@ -209,41 +212,105 @@ def _fee_rate(v):
     if v is None: return None
     return v/10000.0 if v > 1 else float(v)
 
+def _fee_rate_canonical(m):
+    """Каноническое расписание комиссий: feesEnabled + feeSchedule.rate.
+    Возвращает (ставка, is_canonical). Если feesEnabled отсутствует — (None, False).
+    Если feesEnabled=True, а расписание не читается — (None, True) → fail-closed."""
+    fees_enabled = m.get("feesEnabled")
+    if fees_enabled is None:
+        return None, False
+    if not fees_enabled:
+        return 0.0, True                     # явно отключено — ноль валиден
+    schedule = m.get("feeSchedule") or {}
+    rate = _num(schedule, "rate")
+    if rate is None:
+        return None, True                    # включено, но расписание отсутствует
+    return float(rate), True
+
 def parse_market_params(m):
-    """Комиссия/шаг цены/минимальный ордер КОНКРЕТНОГО рынка. Ничего не
-    угадываем и ничего не подставляем по умолчанию: нет поля или значение вне
-    санитарных границ — None, и рынок не торгуется (fail-closed)."""
+    """Комиссия / шаг цены / нотионал КОНКРЕТНОГО рынка (Gamma-данные).
+    Ничего не угадываем и ничего не подставляем по умолчанию: нет поля или
+    значение вне санитарных границ — None, и рынок не торгуется (fail-closed).
+
+    Комиссия: сначала каноническое поле feesEnabled + feeSchedule.rate;
+    при его отсутствии — устаревший taker_base_fee (>1 → б.п., иначе доля).
+    Конфликт канонического и устаревшего значений → None (fail-closed).
+
+    min_notional — USDC-нотионал (Gamma `orderMinSize`); min_shares=0.0 —
+    заполняется отдельно из CLOB в `market_params` и не смешивается с нотионалом."""
     if not isinstance(m, dict): return None
-    fee_rate = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
-                              "feeRateBps", "fee_rate_bps"))
+    canonical_rate, is_canonical = _fee_rate_canonical(m)
+    if is_canonical:
+        if canonical_rate is None:
+            return None                      # feesEnabled=True, но расписания нет
+        legacy = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
+                                "feeRateBps", "fee_rate_bps"))
+        if legacy is not None and abs(legacy - canonical_rate) > 1e-9:
+            return None                      # канонический и устаревший конфликтуют
+        fee_rate = canonical_rate
+    else:
+        fee_rate = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
+                                  "feeRateBps", "fee_rate_bps"))
     tick = _num(m, "minimum_tick_size", "orderPriceMinTickSize", "mts", "tickSize")
-    min_order = _num(m, "minimum_order_size", "orderMinSize", "mos", "minimumOrderSize")
-    min_shares = _num(m, "minimum_order_size_shares", "minSharesSize", "minimumOrderShares") or 0.0
-    if fee_rate is None or tick is None or min_order is None: return None
+    # min_notional — Gamma USDC-нотионал; min_shares заполняется из CLOB отдельно
+    min_notional = _num(m, "orderMinSize", "minimum_order_size", "mos", "minimumOrderSize")
+    if fee_rate is None or tick is None or min_notional is None: return None
     if not (0.0 <= fee_rate <= FEE_RATE_MAX): return None
     if not (0.0 < tick <= TICK_MAX): return None
-    if not (0.0 < min_order <= MIN_ORDER_MAX): return None
-    if min_shares < 0: return None
-    return MarketParams(fee_rate=fee_rate, tick=tick, min_order=min_order,
-                        min_shares=min_shares, source="market")
+    if not (0.0 < min_notional <= MIN_ORDER_MAX): return None
+    return MarketParams(fee_rate=fee_rate, tick=tick, min_notional=min_notional,
+                        min_shares=0.0, source="market")
 
 def market_params(m, fetch=None):
-    """Параметры рынка: сначала из объекта Gamma, при нехватке полей —
-    добор из CLOB по conditionId. Не удалось — None (сделки нет)."""
+    """Параметры рынка: нотионал (USDC) и шаг/комиссия из Gamma;
+    min_shares (акции) из CLOB по conditionId.
+    Два ограничения — из разных источников, смешивать нельзя.
+    Не удалось получить обязательные поля — None (сделки нет)."""
     p = parse_market_params(m)
-    if p: return p
-    cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
-    if not cid: return None
-    try: raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
-    except Exception: return None
-    if not isinstance(raw, dict): return None
-    merged = dict(m); merged.update(raw)
-    return parse_market_params(merged)
+    if p is None:
+        # Gamma не дала полных параметров; пробуем CLOB для fee/tick.
+        # min_notional обязан прийти из Gamma — из CLOB его не берём.
+        gamma_notional = _num(m, "orderMinSize", "minimum_order_size", "mos", "minimumOrderSize")
+        if gamma_notional is None or not (0.0 < gamma_notional <= MIN_ORDER_MAX):
+            return None
+        cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
+        if not cid: return None
+        try: raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
+        except Exception: return None
+        if not isinstance(raw, dict): return None
+        canonical_rate, is_canonical = _fee_rate_canonical(m)
+        if is_canonical:
+            fee_rate = canonical_rate
+        else:
+            fee_rate = _fee_rate(_num(raw, "taker_base_fee", "takerBaseFee")) or \
+                       _fee_rate(_num(m, "taker_base_fee", "takerBaseFee"))
+        tick = _num(raw, "minimum_tick_size", "orderPriceMinTickSize") or \
+               _num(m, "minimum_tick_size", "orderPriceMinTickSize")
+        if fee_rate is None or tick is None: return None
+        if not (0.0 <= fee_rate <= FEE_RATE_MAX): return None
+        if not (0.0 < tick <= TICK_MAX): return None
+        # CLOB minimum_order_size — это акции (shares), не нотионал
+        clob_shares = _num(raw, "minimum_order_size", "min_order_size") or 0.0
+        p = MarketParams(fee_rate=fee_rate, tick=tick, min_notional=gamma_notional,
+                         min_shares=clob_shares, source="clob")
+    else:
+        # Gamma дала полный набор; дополняем min_shares из CLOB если доступен
+        cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
+        if cid:
+            try:
+                raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
+                if isinstance(raw, dict):
+                    clob_shares = _num(raw, "minimum_order_size", "min_order_size") or 0.0
+                    if clob_shares > p.min_shares:
+                        p = p._replace(min_shares=clob_shares)
+            except Exception:
+                pass  # CLOB min_shares дополнительный; Gamma-параметры уже получены
+    return p
 
 def event_params(markets, fetch=None):
     """Параметры события: строгий режим — параметры обязаны быть у КАЖДОГО
     торгуемого бакета, иначе None. При расхождении берём худший вариант
-    (дороже комиссия, крупнее шаг и минимальный ордер)."""
+    (дороже комиссия, крупнее шаг, нотионал и число акций)."""
     markets = list(markets or [])
     if not markets: return None
     ps = []
@@ -253,7 +320,7 @@ def event_params(markets, fetch=None):
         ps.append(p)
     return MarketParams(fee_rate=max(p.fee_rate for p in ps),
                         tick=max(p.tick for p in ps),
-                        min_order=max(p.min_order for p in ps),
+                        min_notional=max(p.min_notional for p in ps),
                         min_shares=max(p.min_shares for p in ps),
                         source="event")
 
@@ -356,7 +423,7 @@ class BudgetAllocator:
         self.weather_cap = WEATHER_DAY_CAP if weather_cap is None else float(weather_cap)
         self.spent_total = _cents(spent_total or 0.0)
         self.spent_by_date = {k: _cents(v) for k, v in (spent_by_date or {}).items()}
-        self.min_order = float(min_order)
+        self.min_notional = float(min_order)   # минимальный резервируемый USDC за одну рекомендацию
         self.reserved_by_date = {}
         self.reservations = []
 
@@ -382,7 +449,7 @@ class BudgetAllocator:
         want = _cents(max(0.0, float(amount or 0.0)), rounding=ROUND_DOWN)
         left = _cents(self.remaining(wdate), rounding=ROUND_DOWN)
         granted = min(want, left)
-        if granted < _cents(self.min_order):
+        if granted < _cents(self.min_notional):
             return 0.0
         self.reserved_by_date[wdate] = self.reserved_by_date.get(wdate, Decimal("0")) + granted
         self.reservations.append(dict(date=wdate, usd=float(granted), tag=tag))
@@ -446,13 +513,14 @@ COMBO_MIN_LEGS = 2    # комбо из одной ноги — не комбо
 
 def _walk_book(levels, mp, target_shares, usd_cap):
     """Обход книги в Decimal: набираем до target_shares акций, но не меньше
-    минимального ордера рынка по деньгам и не дороже usd_cap.
+    минимального нотионала и минимального числа акций рынка, и не дороже usd_cap.
     Возврат (shares, usd, limit_price) или None, если минимум не набирается.
     Деньги считаются десятичными дробями: нога ровно на $1.00 обязана пройти —
     двоичная 0.9999999999999999 не должна её отбраковывать."""
-    min_order = _cents(mp.min_order)
+    min_notional = _cents(mp.min_notional)
     cap = _cents(usd_cap, rounding=ROUND_DOWN)
-    if cap < min_order: return None
+    if cap < min_notional: return None
+    # Минимальное число акций — бо́льшее из требования рынка (CLOB) и целевого числа
     want_sh = Decimal(str(max(target_shares, mp.min_shares)))
     sh, usd, lim = Decimal("0"), Decimal("0"), None
     for price, size in levels:
@@ -461,16 +529,16 @@ def _walk_book(levels, mp, target_shares, usd_cap):
         a = p + Decimal(str(mp.fee_rate))*p*(1-p)     # полная цена акции
         if a <= 0: continue
         take = max(want_sh - sh, Decimal("0"))
-        if usd < min_order:                            # минимум ордера — обязателен
-            take = max(take, (min_order - usd)/a)
+        if usd < min_notional:                         # USDC-нотионал — обязателен
+            take = max(take, (min_notional - usd)/a)
         if take <= 0: break
         take = min(take, size)
         if usd + a*take > cap:                         # бюджет ноги не превышаем
             take = (cap - usd)/a
             if take <= 0: break
         sh += take; usd += a*take; lim = price
-        if sh >= want_sh and usd >= min_order: break
-    if sh <= 0 or _cents(usd) < min_order: return None
+        if sh >= want_sh and usd >= min_notional: break
+    if sh <= 0 or _cents(usd) < min_notional: return None
     return sh, usd, lim
 
 def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
@@ -491,11 +559,11 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
     budget_left = float(budget_left or 0.0)
     cap = _cents(min(stake, budget_left), rounding=ROUND_DOWN)
     target = (stake/step["cost"]) if step.get("cost") else 0.0
-    if cap < _cents(mp.min_order)*COMBO_MIN_LEGS:
+    if cap < _cents(mp.min_notional)*COMBO_MIN_LEGS:
         return dict(lots=[], skipped=[], total_usd=0.0, min_usd=None, p_covered=0.0,
                     ev_final=None, stake=round(stake, 2), budget_left=round(budget_left, 2),
                     ok=False, reason=(f"доступно ${float(cap):.2f} — меньше {COMBO_MIN_LEGS} "
-                                      f"минимальных ордеров по ${mp.min_order:g}"))
+                                     f"минимальных ордеров по ${mp.min_notional:g}"))
     legs, skipped = [], []
     for b, ask, tid, pp in zip(step["buckets"], step["asks"], step.get("tids", []), step.get("leg_p", [])):
         if not tid or not ask:
@@ -507,7 +575,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
             skipped.append(dict(bucket=b, why="книга недоступна")); continue
         got = _walk_book(levels, mp, mp.min_shares, cap)
         if got is None:
-            skipped.append(dict(bucket=b, why=f"в книге нет объёма даже на минимальный ордер ${mp.min_order:g}")); continue
+            skipped.append(dict(bucket=b, why=f"в книге нет объёма даже на минимальный ордер ${mp.min_notional:g}")); continue
         sh, usd, lim = got
         eff = float(usd/sh)
         if eff > thin_mult*allin(ask, mp):
@@ -520,7 +588,9 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
     if len(legs) < COMBO_MIN_LEGS:
         return dict(base, reason=f"исполнимых ног {len(legs)} < {COMBO_MIN_LEGS}")
     min_total = sum((l["min_usd"] for l in legs), Decimal("0"))
-    if _cents(min_total) > cap:
+    # Точное сравнение в Decimal: не используем _cents() — округление может скрыть
+    # реальное превышение потолка (1.4902 округляется к 1.49 = cap, хотя 1.4902 > 1.49).
+    if min_total > cap:
         return dict(base, reason=(f"минимальные лоты ${float(_cents(min_total)):.2f} превышают "
                                   f"доступное ${float(cap):.2f} (ставка ${stake:.2f}, "
                                   f"остаток бюджета ${budget_left:.2f})"))
@@ -602,8 +672,8 @@ def check_arb_legs(legs, mp, fetch=None):
         return dict(res, ok=False, why="в книге нет объёма")
     if cost >= 1.0:
         return dict(res, ok=False, why=f"полная цена комплекта {cost:.3f} ≥ $1 — прибыли нет")
-    if any(allin(pr, mp)*sets + 1e-9 < mp.min_order for pr, _ in lots):
-        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_order:g} по каждой ноге")
+    if any(allin(pr, mp)*sets + 1e-9 < mp.min_notional for pr, _ in lots):
+        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_notional:g} по каждой ноге")
     return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
 def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
@@ -626,7 +696,7 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
         mp = c.get("mp")
         if mp is None:
             c["exec_ok"] = False; c["exec_why"] = "нет торговых параметров рынка"; continue
-        if left < mp.min_order*COMBO_MIN_LEGS:
+        if left < mp.min_notional*COMBO_MIN_LEGS:
             c["exec_ok"] = False
             c["exec_why"] = f"бюджет на {wdate} исчерпан: осталось ${left:.2f}"
             continue
@@ -649,6 +719,13 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
         approved[kind] = c
     for t in sorted(picks, key=lambda t: -t.get("conf", 0)*t.get("ev", 0)):
         want = t.get("stake") or 0.0
+        mp_t = t.get("mp")
+        t_min_notional = mp_t.min_notional if mp_t else allocator.min_notional
+        if want < t_min_notional:
+            t["stake"] = 0.0
+            t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
+                                 f"ордера этого рынка ${t_min_notional:.2f}")
+            continue
         granted = allocator.reserve(t.get("date"), want, tag=f"single:{t.get('city')}:{t.get('date')}") if want else 0.0
         t["stake"] = granted
         if granted <= 0: t["budget_block"] = "бюджет даты исчерпан"
@@ -773,14 +850,23 @@ def resolution_fingerprint(desc):
 
 def parse_resolution(desc):
     """Разбор ПРАВИЛ КОНКРЕТНОГО рынка: источник, станция, единицы.
-    Ничего не додумываем — что не написано, то не распознано."""
+    Ничего не додумываем — что не написано, то не распознано.
+
+    Единицы извлекаются ТОЛЬКО из нормативного текста резолюции; предложения
+    с инструкциями интерфейса (переключение единиц через шестерёнку) не
+    являются нормативными и не должны влиять на единицы резолюции."""
     text = desc or ""
     low = text.lower()
     sources = sorted({name for name, keys in RES_SOURCES if any(k in low for k in keys)})
+    # Удаляем UI-инструкции перед разбором единиц: фраза «To toggle between X and Y»
+    # описывает настройку отображения, а не нормативную единицу резолюции.
+    text_norm = re.sub(r"[Tt]o toggle\b[^.!?\n]*[.!?]?", "", text)
+    text_norm = re.sub(r"[Cc]lick the gear\b[^.!?\n]*[.!?]?", "", text_norm)
+    low_norm = text_norm.lower()
     units = set()
-    for m in re.finditer(r"degrees\s+(celsius|fahrenheit)", low): units.add(m.group(1)[0].upper())
-    for m in re.finditer(r"°\s*([CF])\b", text): units.add(m.group(1))
-    for m in re.finditer(r"\bdeg\s*([CF])\b", text): units.add(m.group(1))
+    for m in re.finditer(r"degrees\s+(celsius|fahrenheit)", low_norm): units.add(m.group(1)[0].upper())
+    for m in re.finditer(r"°\s*([CF])\b", text_norm): units.add(m.group(1))
+    for m in re.finditer(r"\bdeg\s*([CF])\b", text_norm): units.add(m.group(1))
     tokens = {t for t in re.findall(r"\b[A-Z]{4}\b", text)} - STATION_STOP
     known = sorted(tokens & ICAO_SET)
     return dict(sources=sources, units=sorted(units), stations=sorted(tokens),
@@ -931,7 +1017,7 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                     trades.append(dict(base, side="YES", cost=round(c,3), ask=ba,
                                        ev=round(pS*(1/c-1)-(1-pS),2),
                                        conf=max(1,min(5,conf)), robust=robust,
-                                       stake=kelly_stake(pS, min(pLoS, pHiS), c)))
+                                       stake=kelly_stake(pS, min(pLoS, pHiS), c), mp=mp))
             if bb is not None and mid >= 0.25 and (mid-pS) >= 0.12:
                 c = allin(1-bb, mp)
                 robust = (mid-pHiS >= 0.08) and (mid-pLoS >= 0.08)
@@ -942,7 +1028,7 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                 trades.append(dict(base, side="NO", cost=round(c,3), ask=round(1-bb,3),
                                    ev=round((1-pS)*(1/c-1)-pS,2),
                                    conf=max(1,min(5,conf)), robust=robust,
-                                   stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c)))
+                                   stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c), mp=mp))
         for st in chance_combos(crows, mp):
             COMBOS.append(dict(st, city=ru, date=ds, lead=lead, vol=int(vol), tier=tier,
                                mp=mp, link=f"https://polymarket.com/event/{eslug}"))

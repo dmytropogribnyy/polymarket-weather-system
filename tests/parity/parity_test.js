@@ -35,7 +35,7 @@ function loadCore(){
 const C = loadCore();
 const cases = JSON.parse(fs.readFileSync(CASES, "utf8"));
 const r = (x, n) => (x === null || x === undefined) ? null : Math.round(x*Math.pow(10, n))/Math.pow(10, n);
-const mpOf = o => ({ fee_rate: o.fee_rate, tick: o.tick, min_order: o.min_order,
+const mpOf = o => ({ fee_rate: o.fee_rate, tick: o.tick, min_notional: o.min_order,
                      min_shares: o.min_shares || 0, source: "case" });
 
 const out = {};
@@ -43,7 +43,7 @@ const out = {};
 out.market_params = cases.market_params.map(c => {
   const p = C.eventParams(c.markets);
   return { name: c.name, params: p === null ? null :
-    { fee_rate: r(p.fee_rate, 12), tick: r(p.tick, 12), min_order: r(p.min_order, 12), min_shares: r(p.min_shares, 12) } };
+    { fee_rate: r(p.fee_rate, 12), tick: r(p.tick, 12), min_notional: r(p.min_notional, 12), min_shares: r(p.min_shares, 12) } };
 });
 
 out.prices = cases.prices.map(c => {

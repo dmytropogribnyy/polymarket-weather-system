@@ -295,14 +295,14 @@ function parseMarketParams(m){
   if (!m || typeof m !== "object") return null;
   const fee_rate = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
   const tick = numOf(m, ["minimum_tick_size","orderPriceMinTickSize","mts","tickSize"]);
-  const min_order = numOf(m, ["minimum_order_size","orderMinSize","mos","minimumOrderSize"]);
+  const min_notional = numOf(m, ["minimum_order_size","orderMinSize","mos","minimumOrderSize"]);
   const min_shares = numOf(m, ["minimum_order_size_shares","minSharesSize","minimumOrderShares"]) || 0;
-  if (fee_rate === null || tick === null || min_order === null) return null;
+  if (fee_rate === null || tick === null || min_notional === null) return null;
   if (!(fee_rate >= 0 && fee_rate <= FEE_RATE_MAX)) return null;
   if (!(tick > 0 && tick <= TICK_MAX)) return null;
-  if (!(min_order > 0 && min_order <= MIN_ORDER_MAX)) return null;
+  if (!(min_notional > 0 && min_notional <= MIN_ORDER_MAX)) return null;
   if (min_shares < 0) return null;
-  return { fee_rate, tick, min_order, min_shares, source: "market" };
+  return { fee_rate, tick, min_notional, min_shares, source: "market" };
 }
 /* Параметры события: обязаны быть у КАЖДОГО бакета, иначе null; при расхождении — худший вариант. */
 function eventParams(list){
@@ -310,7 +310,7 @@ function eventParams(list){
   const ps = [];
   for (const m of list){ const p = parseMarketParams(m); if (!p) return null; ps.push(p); }
   return { fee_rate: Math.max(...ps.map(p => p.fee_rate)), tick: Math.max(...ps.map(p => p.tick)),
-           min_order: Math.max(...ps.map(p => p.min_order)), min_shares: Math.max(...ps.map(p => p.min_shares)),
+           min_notional: Math.max(...ps.map(p => p.min_notional)), min_shares: Math.max(...ps.map(p => p.min_shares)),
            source: "event" };
 }
 function feeOf(price, mp){ return mp.fee_rate*price*(1-price); }   // $/акцию, ставка — рынка
@@ -437,7 +437,7 @@ const round1 = x => Math.round(x*10)/10;
    ровно на $1.00 обязана пройти, двоичная 0.9999999999999999 не должна её
    отбраковывать. */
 function walkBook(levels, mp, targetShares, usdCap){
-  const minOrder = mp.min_order;
+  const minOrder = mp.min_notional;
   const cap = centsDown(usdCap);
   if (cap + EPS_M < minOrder) return null;
   const wantSh = Math.max(targetShares, mp.min_shares || 0);
@@ -476,8 +476,8 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
   const fail = (reason, legs) => ({ lots: [], skipped, total_usd: 0,
     min_usd: legs ? centsUp(legs.reduce((s,l) => s+l.min_usd, 0)) : null, p_covered: 0,
     ev_final: null, stake: centsUp(stake), budget_left: centsUp(budgetLeft), ok: false, reason });
-  if (cap + EPS_M < mp.min_order*COMBO_MIN_LEGS)
-    return fail(`доступно $${cap.toFixed(2)} — меньше ${COMBO_MIN_LEGS} минимальных ордеров по $${mp.min_order}`);
+  if (cap + EPS_M < mp.min_notional*COMBO_MIN_LEGS)
+    return fail(`доступно $${cap.toFixed(2)} — меньше ${COMBO_MIN_LEGS} минимальных ордеров по $${mp.min_notional}`);
   const legs = [];
   for (let i = 0; i < step.buckets.length; i++){
     const b = step.buckets[i], ask = step.asks[i], tid = (step.tids||[])[i], pp = (step.leg_p||[])[i];
@@ -486,7 +486,7 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     if (!levels){ skipped.push({ bucket: b, why: "книга недоступна" }); continue; }
     const sorted = levels.slice().sort((a,z) => a[0]-z[0]);
     const got = walkBook(sorted, mp, mp.min_shares || 0, cap);
-    if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${mp.min_order}` }); continue; }
+    if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${mp.min_notional}` }); continue; }
     const eff = got.usd/got.sh;
     if (eff > thinMult*allin(ask, mp)){
       skipped.push({ bucket: b, why: `тонкая книга: средняя ${(eff*100).toFixed(1)}¢ против аска ${(ask*100).toFixed(1)}¢` });
@@ -559,8 +559,8 @@ function checkArbLegs(legs, mp, books){
   const base = { exec_sets: sets, exec_cost: Math.round(cost*1000)/1000, exec_profit: 0 };
   if (sets <= 0) return Object.assign(base, { ok: false, why: "в книге нет объёма" });
   if (cost >= 1) return Object.assign(base, { ok: false, why: `полная цена комплекта ${cost.toFixed(3)} ≥ $1 — прибыли нет` });
-  if (lots.some(pr => allin(pr, mp)*sets + EPS_M < mp.min_order))
-    return Object.assign(base, { ok: false, why: `объёма не хватает на минимальный ордер $${mp.min_order} по каждой ноге` });
+  if (lots.some(pr => allin(pr, mp)*sets + EPS_M < mp.min_notional))
+    return Object.assign(base, { ok: false, why: `объёма не хватает на минимальный ордер $${mp.min_notional} по каждой ноге` });
   return Object.assign(base, { ok: true, why: null, exec_profit: Math.round((1-cost)*sets*100)/100 });
 }
 
@@ -648,7 +648,7 @@ async function fetchEventParams(markets){
     ps.push(p);
   }
   return eventParams(ps.map(p => ({ taker_base_fee: p.fee_rate, minimum_tick_size: p.tick,
-                                    minimum_order_size: p.min_order,
+                                    minimum_order_size: p.min_notional,
                                     minimum_order_size_shares: p.min_shares })));
 }
 
@@ -1128,7 +1128,7 @@ async function scan(){
         const win = st*(1/c.cost - 1), evd = st*(c.pWin/c.cost - 1);
         // Polymarket: минимум $1 на ордер. Считаем акции по ноге: max(целевые, минимум на $1)
         const tgt = st/c.cost;
-        const legs = c.buckets.map(b => { const sh = Math.max(tgt, c.mp.min_order/allin(b.ask, c.mp)); return { b, sh, usd: sh*allin(b.ask, c.mp) }; });
+        const legs = c.buckets.map(b => { const sh = Math.max(tgt, c.mp.min_notional/allin(b.ask, c.mp)); return { b, sh, usd: sh*allin(b.ask, c.mp) }; });
         const realUsd = legs.reduce((s,l) => s + l.usd, 0);
         const legTxt = legs.map(l => `${esc(l.b.title)} ≤${fmtC(l.b.ask)} × ${l.sh.toFixed(1)} акц ($${l.usd.toFixed(2)})`).join(" · ");
         const wide = (c.pHi - c.pLo) > 0.25 || c.r.tier === "C";

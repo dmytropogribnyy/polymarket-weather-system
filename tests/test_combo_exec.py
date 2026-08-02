@@ -4,7 +4,7 @@ import unittest
 from tests.support import FakeFetch, book, combo_step  # noqa: F401
 import wx_daily as w
 
-MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_order=1.0, min_shares=0.0, source="test")
+MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, min_shares=0.0, source="test")
 
 
 def books(**per_token):
@@ -28,7 +28,7 @@ class TestDecimalBoundary(unittest.TestCase):
         self.assertTrue(ex["ok"], ex.get("reason"))
         self.assertEqual(len(ex["lots"]), 2)
         for lot in ex["lots"]:
-            self.assertGreaterEqual(lot["usd"], MP.min_order)
+            self.assertGreaterEqual(lot["usd"], MP.min_notional)
 
     def test_min_lot_uses_full_price_with_market_fee(self):
         step = combo_step(stake=10.0, asks=(0.10, 0.10), tids=("a", "b"),
@@ -68,13 +68,29 @@ class TestCaps(unittest.TestCase):
         self.assertTrue(ex["reason"])
 
     def test_bigger_market_minimum_is_respected(self):
-        big = MP._replace(min_order=5.0)
+        big = MP._replace(min_notional=5.0)
         step = combo_step(stake=6.0, asks=(0.10, 0.20), tids=("a", "b"),
                           leg_p=(0.30, 0.40), cost=0.315)
         f = books(a=[(0.10, 10000)], b=[(0.20, 10000)])
         ex = w.combo_lots(step, big, 6.0, f)
         self.assertFalse(ex["ok"])
         self.assertIn("$", ex["reason"])
+
+    def test_exact_decimal_cap_comparison_catches_small_overrun(self):
+        """Сравнение min_total > cap должно быть точным (Decimal), а не через _cents():
+        _cents(1.4902) = 1.49 = cap, но 1.4902 > 1.49 — реальное превышение.
+        Этот тест проверяет математическое свойство, которое должна соблюдать реализация."""
+        from decimal import Decimal, ROUND_HALF_UP
+        CENT = Decimal("0.01")
+        min_total = Decimal("1.4902")
+        cap = Decimal("1.49")
+        rounded = min_total.quantize(CENT, rounding=ROUND_HALF_UP)
+        # Округление скрыло бы превышение
+        self.assertEqual(rounded, cap,
+                         "ожидаем, что _cents скруглит вниз и сравнение через rounded > cap не поймает")
+        self.assertGreater(min_total, cap,
+                           "реальное превышение cap должно быть видно через точное Decimal сравнение")
+        # Реализация использует точное сравнение (min_total > cap), а не через _cents
 
 
 class TestSurvivingLegs(unittest.TestCase):

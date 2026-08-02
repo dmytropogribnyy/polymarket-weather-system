@@ -29,7 +29,7 @@ def _r(x, n):
 
 
 def _mp(o):
-    return wx.MarketParams(fee_rate=o["fee_rate"], tick=o["tick"], min_order=o["min_order"],
+    return wx.MarketParams(fee_rate=o["fee_rate"], tick=o["tick"], min_notional=o["min_order"],
                            min_shares=o.get("min_shares") or 0.0, source="case")
 
 
@@ -52,7 +52,7 @@ def py_results(cases):
         out["market_params"].append(dict(
             name=c["name"],
             params=None if p is None else dict(fee_rate=_r(p.fee_rate, 12), tick=_r(p.tick, 12),
-                                               min_order=_r(p.min_order, 12), min_shares=_r(p.min_shares, 12))))
+                                               min_notional=_r(p.min_notional, 12), min_shares=_r(p.min_shares, 12))))
 
     out["prices"] = [dict(price=c["price"], fee=_r(wx.fee(c["price"], _mp(c["mp"])), 12),
                           allin=_r(wx.allin(c["price"], _mp(c["mp"])), 12))

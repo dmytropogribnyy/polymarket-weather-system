@@ -7,6 +7,14 @@ import wx_daily as w
 VALID = ("This market will resolve to the temperature reported by Weather Underground "
          "for station ZUUU (Chengdu) in degrees Celsius on August 3, 2026.")
 
+# Точная копия живых правил Chengdu, включая UI-подсказку о переключении F/C
+LIVE_CHENGDU_WITH_TOGGLE = (
+    "This market will resolve to the temperature reported by Weather Underground "
+    "for station ZUUU (Chengdu) in degrees Celsius on August 3, 2026. "
+    "To toggle between Fahrenheit and Celsius, click the gear icon on the "
+    "Weather Underground page."
+)
+
 
 class TestParseResolution(unittest.TestCase):
     def test_valid_rules_are_parsed(self):
@@ -80,6 +88,18 @@ class TestCheckResolution(unittest.TestCase):
         ok, det = self.check(VALID + " Values are published in degrees Fahrenheit.")
         self.assertFalse(ok)
         self.assertIn("ротиворечив", det["reason"])
+
+    def test_live_chengdu_rules_with_ui_toggle_sentence_pass(self):
+        """Живые правила Chengdu содержат UI-подсказку 'To toggle between Fahrenheit
+        and Celsius, click the gear icon...'.  Эта фраза — настройка отображения,
+        а не нормативная единица измерения.  parse_resolution обязан её игнорировать
+        и вернуть units=['C'], а check_resolution — не выдать NO BET."""
+        r = w.parse_resolution(LIVE_CHENGDU_WITH_TOGGLE)
+        self.assertEqual(r["units"], ["C"],
+                         "UI-подсказка о Fahrenheit не должна засорять нормативные единицы")
+        ok, det = self.check(LIVE_CHENGDU_WITH_TOGGLE)
+        self.assertTrue(ok, det.get("reason"))
+        self.assertIsNone(det["reason"])
 
     def test_changed_rules_are_no_bet(self):
         ok, _ = self.check(VALID)

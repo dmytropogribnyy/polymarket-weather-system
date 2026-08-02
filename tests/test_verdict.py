@@ -4,7 +4,7 @@ import unittest
 from tests.support import FakeFetch, book, combo_step  # noqa: F401
 import wx_daily as w
 
-MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_order=1.0, min_shares=0.0, source="test")
+MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, min_shares=0.0, source="test")
 
 
 def deep_books(*tids):
@@ -106,6 +106,37 @@ class TestPlanWeather(unittest.TestCase):
         approved = w.plan_weather([c], [], alloc, fetch=deep_books("a", "b"))
         self.assertIsNone(approved["max"])
         self.assertIn("EV", c["exec_why"])
+
+
+    def test_single_pick_with_stake_below_market_min_is_rejected(self):
+        """Одиночная ставка ниже минимального ордера рынка — NO BET, бюджет не тратим."""
+        mp_big = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=5.0,
+                                min_shares=0.0, source="test")
+        pick = dict(city="Чэнду", date="2026-08-03", stake=2.0, conf=4, ev=0.20, mp=mp_big)
+        alloc = w.BudgetAllocator()
+        w.plan_weather([], [pick], alloc)
+        # ставка 2.0 < min_notional 5.0 → stake=0, бюджет не тронут
+        self.assertEqual(pick["stake"], 0.0)
+        self.assertIn("budget_block", pick)
+        self.assertIn("5", pick["budget_block"])
+        self.assertEqual(alloc.snapshot()["allocations"], [])
+
+    def test_single_pick_at_exact_market_min_is_granted(self):
+        """Ставка точно равная минимуму рынка — выдаётся."""
+        mp5 = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=5.0,
+                             min_shares=0.0, source="test")
+        pick = dict(city="Чэнду", date="2026-08-03", stake=5.0, conf=4, ev=0.20, mp=mp5)
+        alloc = w.BudgetAllocator()
+        w.plan_weather([], [pick], alloc)
+        self.assertGreater(pick["stake"], 0.0)
+
+    def test_single_pick_without_mp_uses_allocator_floor(self):
+        """Одиночная ставка без mp использует глобальный порог аллокатора."""
+        pick = dict(city="Чэнду", date="2026-08-03", stake=1.5, conf=4, ev=0.20)
+        # нет поля mp — аллокатор проверяет свой min_notional = 1.0
+        alloc = w.BudgetAllocator()
+        w.plan_weather([], [pick], alloc)
+        self.assertGreater(pick["stake"], 0.0)
 
 
 if __name__ == "__main__":
