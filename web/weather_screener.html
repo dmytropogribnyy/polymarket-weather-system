@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Погодный скринер · Polymarket · v4.9</title>
+<title>Погодный скринер · Polymarket · v5.0</title>
 <style>
   :root {
     color-scheme: light;
@@ -109,8 +109,8 @@
 </style>
 </head>
 <body>
-<h1>Погодный скринер · Polymarket <span style="font-size:13px;color:var(--ink-3)">v4.9 · 48 городов · вердикт, лоты, банкролл $100</span></h1>
-<div class="sub">Суперансамбль 143 члена (ECMWF 51 + GFS 31 + ICON 40 + GEM 21) на станции резолюции → поправка станции → вероятности бакетов → сравнение с ценами. Горизонт до послезавтра — дальше прогноз слишком размывается. Показываются только сетапы с уверенностью ≥4/5. Калибровка: <span id="calDate">1 августа 2026</span>.</div>
+<h1>Погодный скринер · Polymarket <span style="font-size:13px;color:var(--ink-3)">v5.0 · 48 городов · вердикт, лоты, банкролл $100</span></h1>
+<div class="sub">Суперансамбль 143 члена на станции резолюции → СВОЯ поправка каждому семейству моделей (калибровка v2 на суточном горизонте) → усадка к рынку (λ=0.25, фаза валидации) → цены с тейкер-комиссией. Ноги дешевле 3¢ запрещены. Показываются сетапы ≥4/5; пропуск — норма. Калибровка: <span id="calDate">2 августа 2026 (v2, по семействам)</span>.</div>
 
 <div class="card">
   <div class="row" style="margin-bottom:12px">
@@ -164,68 +164,68 @@
 "use strict";
 /* ============ станции: bias/std/tier калиброваны 2026-08-01 (METAR vs модель) ============ */
 const CITIES = [
-  // калибровка 2026-08-01 (вечер): METAR против архива прогнозов ECMWF, окно 7–11 дней
-  { slug:"london",       name:"Лондон",       lat:51.5053, lon:  0.0553, unit:"C", bias:-0.06, n:9,  std:0.85, tier:"B" },
-  { slug:"paris",        name:"Париж",        lat:48.9694, lon:  2.4414, unit:"C", bias: 1.02, n:9,  std:0.48, tier:"A" },
-  { slug:"milan",        name:"Милан",        lat:45.6306, lon:  8.7281, unit:"C", bias: 0.44, n:9,  std:1.37, tier:"B" },
-  { slug:"munich",       name:"Мюнхен",       lat:48.3538, lon: 11.7861, unit:"C", bias: 2.52, n:9,  std:0.45, tier:"A" },
-  { slug:"madrid",       name:"Мадрид",       lat:40.4719, lon: -3.5626, unit:"C", bias: 0.48, n:9,  std:0.38, tier:"A" },
-  { slug:"warsaw",       name:"Варшава",      lat:52.1657, lon: 20.9671, unit:"C", bias:-0.26, n:9,  std:0.83, tier:"B" },
-  { slug:"amsterdam",    name:"Амстердам",    lat:52.3105, lon:  4.7683, unit:"C", bias: 1.32, n:9,  std:0.19, tier:"A" },
-  { slug:"nyc",          name:"Нью-Йорк",     lat:40.7769, lon:-73.8740, unit:"F", bias:-0.62, n:10, std:1.06, tier:"B" },
-  { slug:"chicago",      name:"Чикаго",       lat:41.9786, lon:-87.9048, unit:"F", bias: 0.04, n:10, std:1.15, tier:"B" },
-  { slug:"dallas",       name:"Даллас",       lat:32.8471, lon:-96.8518, unit:"F", bias:-0.12, n:10, std:1.14, tier:"B" },
-  { slug:"miami",        name:"Майами",       lat:25.7959, lon:-80.2870, unit:"F", bias: 1.39, n:10, std:1.15, tier:"B" },
-  { slug:"atlanta",      name:"Атланта",      lat:33.6407, lon:-84.4277, unit:"F", bias: 0.58, n:10, std:1.14, tier:"B" },
-  { slug:"seattle",      name:"Сиэтл",        lat:47.4502, lon:-122.3088,unit:"F", bias: 0.58, n:10, std:0.66, tier:"A" },
-  { slug:"toronto",      name:"Торонто",      lat:43.6777, lon:-79.6248, unit:"C", bias: 0.18, n:10, std:0.85, tier:"B" },
-  { slug:"seoul",        name:"Сеул",         lat:37.4602, lon:126.4407, unit:"C", bias: 1.68, n:8,  std:1.44, tier:"B" },
-  { slug:"tokyo",        name:"Токио",        lat:35.5494, lon:139.7798, unit:"C", bias:-1.98, n:8,  std:2.14, tier:"C" },
-  { slug:"shanghai",     name:"Шанхай",       lat:31.1443, lon:121.8083, unit:"C", bias:-0.81, n:8,  std:2.10, tier:"C" },
-  { slug:"singapore",    name:"Сингапур",     lat: 1.3644, lon:103.9915, unit:"C", bias: 1.43, n:7,  std:0.56, tier:"A" },
-  { slug:"hong-kong",    name:"Гонконг",      lat:22.3020, lon:114.1741, unit:"C", bias: 0.00, n:0,  std:null, tier:"C" },
-  { slug:"wellington",   name:"Веллингтон",   lat:-41.3272,lon:174.8053, unit:"C", bias: 1.03, n:7,  std:0.77, tier:"A" },
-  { slug:"sao-paulo",    name:"Сан-Паулу",    lat:-23.4356,lon:-46.4731, unit:"C", bias: 0.17, n:10, std:1.73, tier:"C" },
-  { slug:"buenos-aires", name:"Буэнос-Айрес", lat:-34.8222,lon:-58.5358, unit:"C", bias: 1.15, n:10, std:1.18, tier:"B" },
-  { slug:"mexico-city",  name:"Мехико",       lat:19.4363, lon:-99.0721, unit:"C", bias:-0.77, n:10, std:1.46, tier:"B" },
-  // новые города (добавлены 2026-08-01)
-  { slug:"chongqing",    name:"Чунцин",       lat:29.7190, lon:106.6420, unit:"C", bias: 2.60, n:10, std:0.72, tier:"A" },
-  { slug:"chengdu",      name:"Чэнду",        lat:30.5780, lon:103.9470, unit:"C", bias: 0.25, n:10, std:1.27, tier:"B" },
-  { slug:"kuala-lumpur", name:"Куала-Лумпур", lat: 2.7460, lon:101.7100, unit:"C", bias: 0.40, n:8,  std:1.26, tier:"B" },
-  { slug:"los-angeles",  name:"Лос-Анджелес", lat:33.9425, lon:-118.408, unit:"F", bias:-6.55, n:10, std:1.14, tier:"C" },
-  { slug:"tel-aviv",     name:"Тель-Авив",    lat:32.0110, lon: 34.8860, unit:"C", bias:-2.54, n:9,  std:0.60, tier:"A" },
-  { slug:"beijing",      name:"Пекин",        lat:40.0800, lon:116.5850, unit:"C", bias: 0.41, n:8,  std:1.87, tier:"C" },
-  { slug:"taipei",       name:"Тайбэй",       lat:25.0690, lon:121.5520, unit:"C", bias: 1.98, n:8,  std:0.96, tier:"B" },
-  { slug:"helsinki",     name:"Хельсинки",    lat:60.3170, lon: 24.9630, unit:"C", bias: 1.60, n:9,  std:0.92, tier:"B" },
-  { slug:"lucknow",      name:"Лакхнау",      lat:26.7610, lon: 80.8890, unit:"C", bias: 0.80, n:8,  std:1.13, tier:"B" },
-  { slug:"jeddah",       name:"Джидда",       lat:21.6800, lon: 39.1570, unit:"C", bias:-2.15, n:11, std:1.21, tier:"B" },
-  { slug:"karachi",      name:"Карачи",       lat:24.9070, lon: 67.1610, unit:"C", bias:-1.33, n:8,  std:0.52, tier:"A" },
-  { slug:"houston",      name:"Хьюстон",      lat:29.6460, lon:-95.2790, unit:"F", bias: 0.34, n:10, std:0.54, tier:"A" },
-  { slug:"ankara",       name:"Анкара",       lat:40.1280, lon: 32.9950, unit:"C", bias: 0.49, n:9,  std:1.15, tier:"B" },
-  { slug:"wuhan",        name:"Ухань",        lat:30.7840, lon:114.2080, unit:"C", bias: 1.65, n:10, std:0.67, tier:"A" },
-  { slug:"guangzhou",    name:"Гуанчжоу",     lat:23.3920, lon:113.2990, unit:"C", bias: 2.21, n:7,  std:0.94, tier:"B" },
-  { slug:"denver",       name:"Денвер",       lat:39.7020, lon:-104.752, unit:"F", bias: 1.10, n:10, std:0.68, tier:"A" },
-  { slug:"istanbul",     name:"Стамбул",      lat:41.2760, lon: 28.7520, unit:"C", bias: 0.00, n:9,  std:0.48, tier:"A" },
-  { slug:"qingdao",      name:"Циндао",       lat:36.3620, lon:120.0880, unit:"C", bias: 0.32, n:10, std:0.88, tier:"B" },
-  { slug:"cape-town",    name:"Кейптаун",     lat:-33.9650,lon: 18.6020, unit:"C", bias: 0.82, n:11, std:0.54, tier:"A" },
-  { slug:"manila",       name:"Манила",       lat:14.5090, lon:121.0200, unit:"C", bias: 1.31, n:10, std:0.71, tier:"A" },
-  // новые города (добавлены 2026-08-02, калибровка живая)
-  { slug:"austin",       name:"Остин",        lat:30.1975, lon:-97.6664, unit:"F", bias: 0.27, n:10, std:0.80, tier:"B" },
-  { slug:"busan",        name:"Пусан",        lat:35.1795, lon:128.9382, unit:"C", bias:-1.47, n:10, std:1.10, tier:"B" },
-  { slug:"shenzhen",     name:"Шэньчжэнь",    lat:22.6393, lon:113.8107, unit:"C", bias: 0.86, n:10, std:1.14, tier:"B" },
-  { slug:"san-francisco",name:"Сан-Франциско",lat:37.6213, lon:-122.3790,unit:"F", bias: 1.94, n:10, std:0.73, tier:"A" },
-  { slug:"moscow",       name:"Москва",       lat:55.5915, lon: 37.2615, unit:"C", bias:-0.05, n:8,  std:1.57, tier:"C" }, // Внуково; объём рынка пока мал
+  // калибровка v2 (2026-08-02): lead-matched по семействам — прогноз, каким он был за сутки
+  // до дня (Previous Runs), против METAR. b=поправка, s=разброс, se=ошибка среднего. По каждому
+  // семейству СВОЯ поправка (ECMWF и ICON расходятся на 2-4° — общая поправка была ошибкой).
+  { slug:"london", name:"Лондон", lat:51.5053, lon:0.0553, unit:"C", tier:"B", fams:{ec:{b:0.12,s:0.74,se:0.25}, gf:{b:-1.1,s:0.94,se:0.31}, gm:{b:0.62,s:0.86,se:0.29}, ic:{b:0.52,s:0.51,se:0.17}} },
+  { slug:"paris", name:"Париж", lat:48.9694, lon:2.4414, unit:"C", tier:"C", fams:{ec:{b:1.13,s:0.77,se:0.26}, gf:{b:-1.53,s:1.92,se:0.64}, gm:{b:0.41,s:1.24,se:0.41}, ic:{b:-0.0,s:0.76,se:0.25}} },
+  { slug:"milan", name:"Милан", lat:45.6306, lon:8.7281, unit:"C", tier:"C", fams:{ec:{b:1.09,s:1.4,se:0.47}, gf:{b:-2.51,s:1.52,se:0.51}, gm:{b:0.06,s:1.32,se:0.44}, ic:{b:-0.41,s:1.64,se:0.55}} },
+  { slug:"munich", name:"Мюнхен", lat:48.3538, lon:11.7861, unit:"C", tier:"B", fams:{ec:{b:2.3,s:1.11,se:0.37}, gf:{b:2.2,s:1.07,se:0.36}, gm:{b:0.74,s:1.26,se:0.42}, ic:{b:0.29,s:0.93,se:0.31}} },
+  { slug:"madrid", name:"Мадрид", lat:40.4719, lon:-3.5626, unit:"C", tier:"B", fams:{ec:{b:0.33,s:0.58,se:0.19}, gf:{b:0.6,s:0.81,se:0.27}, gm:{b:1.3,s:1.05,se:0.35}, ic:{b:0.67,s:0.52,se:0.17}} },
+  { slug:"warsaw", name:"Варшава", lat:52.1657, lon:20.9671, unit:"C", tier:"C", fams:{ec:{b:-0.08,s:1.09,se:0.36}, gf:{b:-0.94,s:1.03,se:0.34}, gm:{b:-1.0,s:1.53,se:0.51}, ic:{b:-1.06,s:1.15,se:0.38}} },
+  { slug:"amsterdam", name:"Амстердам", lat:52.3105, lon:4.7683, unit:"C", tier:"A", fams:{ec:{b:1.28,s:0.66,se:0.22}, gf:{b:-1.03,s:0.82,se:0.27}, gm:{b:0.39,s:0.9,se:0.3}, ic:{b:0.47,s:0.69,se:0.23}} },
+  { slug:"nyc", name:"Нью-Йорк", lat:40.7769, lon:-73.874, unit:"F", tier:"C", fams:{ec:{b:-0.53,s:1.57,se:0.49}, gf:{b:-1.1,s:1.21,se:0.38}, gm:{b:0.84,s:1.02,se:0.32}, ic:{b:-0.54,s:1.22,se:0.39}} },
+  { slug:"chicago", name:"Чикаго", lat:41.9786, lon:-87.9048, unit:"F", tier:"C", fams:{ec:{b:-1.23,s:1.8,se:0.57}, gf:{b:-1.72,s:1.23,se:0.39}, gm:{b:0.46,s:1.42,se:0.45}, ic:{b:-1.16,s:2.03,se:0.64}} },
+  { slug:"dallas", name:"Даллас", lat:32.8471, lon:-96.8518, unit:"F", tier:"A", fams:{ec:{b:-1.99,s:0.67,se:0.21}, gf:{b:-3.2,s:0.79,se:0.25}, gm:{b:-0.26,s:0.69,se:0.22}, ic:{b:-0.85,s:0.43,se:0.14}} },
+  { slug:"miami", name:"Майами", lat:25.7959, lon:-80.287, unit:"F", tier:"C", fams:{ec:{b:1.61,s:0.88,se:0.28}, gf:{b:-1.59,s:1.27,se:0.4}, gm:{b:1.35,s:1.94,se:0.61}, ic:{b:0.58,s:0.95,se:0.3}} },
+  { slug:"atlanta", name:"Атланта", lat:33.6407, lon:-84.4277, unit:"F", tier:"C", fams:{ec:{b:0.64,s:1.34,se:0.42}, gf:{b:-2.36,s:1.5,se:0.47}, gm:{b:1.79,s:0.88,se:0.28}, ic:{b:0.95,s:1.82,se:0.58}} },
+  { slug:"seattle", name:"Сиэтл", lat:47.4502, lon:-122.3088, unit:"F", tier:"B", fams:{ec:{b:0.48,s:0.91,se:0.29}, gf:{b:-2.54,s:0.67,se:0.21}, gm:{b:0.78,s:1.41,se:0.45}, ic:{b:1.45,s:1.19,se:0.38}} },
+  { slug:"toronto", name:"Торонто", lat:43.6777, lon:-79.6248, unit:"C", tier:"B", fams:{ec:{b:0.06,s:1.43,se:0.45}, gf:{b:-0.92,s:1.13,se:0.36}, gm:{b:2.46,s:1.41,se:0.45}, ic:{b:0.87,s:0.66,se:0.21}} },
+  { slug:"seoul", name:"Сеул", lat:37.4602, lon:126.4407, unit:"C", tier:"C", fams:{ec:{b:1.74,s:0.78,se:0.27}, gf:{b:4.34,s:0.87,se:0.31}, gm:{b:1.99,s:1.04,se:0.37}, ic:{b:0.61,s:0.81,se:0.29}} },
+  { slug:"tokyo", name:"Токио", lat:35.5494, lon:139.7798, unit:"C", tier:"C", fams:{ec:{b:-2.01,s:2.55,se:0.9}, gf:{b:-0.34,s:2.85,se:1.01}, gm:{b:0.09,s:2.86,se:1.01}, ic:{b:0.36,s:2.69,se:0.95}} },
+  { slug:"shanghai", name:"Шанхай", lat:31.1443, lon:121.8083, unit:"C", tier:"C", fams:{ec:{b:0.07,s:1.76,se:0.62}, gf:{b:2.0,s:1.74,se:0.62}, gm:{b:2.28,s:1.79,se:0.63}, ic:{b:1.39,s:1.89,se:0.67}} },
+  { slug:"singapore", name:"Сингапур", lat:1.3644, lon:103.9915, unit:"C", tier:"B", fams:{ec:{b:1.76,s:0.85,se:0.32}, gf:{b:1.39,s:1.09,se:0.41}, gm:{b:0.86,s:0.94,se:0.36}, ic:{b:0.83,s:0.72,se:0.27}} },
+  { slug:"hong-kong", name:"Гонконг", lat:22.302, lon:114.1741, unit:"C", tier:"C", fams:null },
+  { slug:"wellington", name:"Веллингтон", lat:-41.3272, lon:174.8053, unit:"C", tier:"C", fams:{ec:{b:0.75,s:1.55,se:0.55}, gf:{b:0.81,s:1.53,se:0.54}, gm:{b:0.84,s:1.44,se:0.51}, ic:{b:0.5,s:1.47,se:0.52}} },
+  { slug:"sao-paulo", name:"Сан-Паулу", lat:-23.4356, lon:-46.4731, unit:"C", tier:"C", fams:{ec:{b:0.39,s:1.36,se:0.43}, gf:{b:-0.98,s:1.21,se:0.38}, gm:{b:-0.96,s:1.72,se:0.54}, ic:{b:0.23,s:0.98,se:0.31}} },
+  { slug:"buenos-aires", name:"Буэнос-Айрес", lat:-34.8222, lon:-58.5358, unit:"C", tier:"C", fams:{ec:{b:0.68,s:0.77,se:0.24}, gf:{b:0.76,s:1.57,se:0.5}, gm:{b:0.43,s:1.51,se:0.48}, ic:{b:1.22,s:1.53,se:0.48}} },
+  { slug:"mexico-city", name:"Мехико", lat:19.4363, lon:-99.0721, unit:"C", tier:"C", fams:{ec:{b:-0.46,s:2.59,se:0.82}, gf:{b:-0.06,s:1.3,se:0.41}, gm:{b:0.61,s:2.14,se:0.68}, ic:{b:-0.04,s:0.93,se:0.29}} },
+  { slug:"chongqing", name:"Чунцин", lat:29.719, lon:106.642, unit:"C", tier:"C", fams:{ec:{b:2.48,s:0.65,se:0.22}, gf:{b:4.22,s:1.22,se:0.41}, gm:{b:1.61,s:1.44,se:0.48}, ic:{b:1.21,s:0.95,se:0.32}} },
+  { slug:"chengdu", name:"Чэнду", lat:30.578, lon:103.947, unit:"C", tier:"C", fams:{ec:{b:0.0,s:1.81,se:0.6}, gf:{b:3.42,s:2.0,se:0.67}, gm:{b:2.3,s:1.56,se:0.52}, ic:{b:1.0,s:1.55,se:0.52}} },
+  { slug:"kuala-lumpur", name:"Куала-Лумпур", lat:2.746, lon:101.71, unit:"C", tier:"C", fams:{ec:{b:1.15,s:1.91,se:0.68}, gf:{b:1.1,s:1.91,se:0.67}, gm:{b:2.95,s:1.4,se:0.5}, ic:{b:0.25,s:1.8,se:0.63}} },
+  { slug:"los-angeles", name:"Лос-Анджелес", lat:33.9425, lon:-118.408, unit:"F", tier:"C", fams:{ec:{b:-7.8,s:1.4,se:0.44}, gf:{b:-2.09,s:1.0,se:0.32}, gm:{b:-1.01,s:0.76,se:0.24}, ic:{b:-2.83,s:0.94,se:0.3}} },
+  { slug:"tel-aviv", name:"Тель-Авив", lat:32.011, lon:34.886, unit:"C", tier:"A", fams:{ec:{b:-2.43,s:0.67,se:0.22}, gf:{b:-0.66,s:0.56,se:0.19}, gm:{b:-0.02,s:0.39,se:0.13}, ic:{b:-0.24,s:0.61,se:0.2}} },
+  { slug:"beijing", name:"Пекин", lat:40.08, lon:116.585, unit:"C", tier:"B", fams:{ec:{b:0.8,s:0.75,se:0.28}, gf:{b:-0.81,s:0.94,se:0.36}, gm:{b:1.06,s:1.21,se:0.46}, ic:{b:2.67,s:1.05,se:0.4}} },
+  { slug:"taipei", name:"Тайбэй", lat:25.069, lon:121.552, unit:"C", tier:"B", fams:{ec:{b:2.17,s:0.5,se:0.18}, gf:{b:0.94,s:1.34,se:0.47}, gm:{b:2.82,s:1.42,se:0.5}, ic:{b:1.59,s:0.73,se:0.26}} },
+  { slug:"helsinki", name:"Хельсинки", lat:60.317, lon:24.963, unit:"C", tier:"B", fams:{ec:{b:1.82,s:0.56,se:0.19}, gf:{b:1.03,s:1.01,se:0.34}, gm:{b:1.61,s:0.34,se:0.11}, ic:{b:1.19,s:0.58,se:0.19}} },
+  { slug:"lucknow", name:"Лакхнау", lat:26.761, lon:80.889, unit:"C", tier:"C", fams:{ec:{b:1.46,s:0.82,se:0.29}, gf:{b:-2.7,s:1.88,se:0.67}, gm:{b:1.83,s:1.42,se:0.5}, ic:{b:1.08,s:1.16,se:0.41}} },
+  { slug:"jeddah", name:"Джидда", lat:21.68, lon:39.157, unit:"C", tier:"B", fams:{ec:{b:-1.54,s:1.28,se:0.39}, gf:{b:1.35,s:1.34,se:0.4}, gm:{b:3.27,s:1.19,se:0.36}, ic:{b:0.08,s:1.44,se:0.44}} },
+  { slug:"karachi", name:"Карачи", lat:24.907, lon:67.161, unit:"C", tier:"B", fams:{ec:{b:-1.38,s:1.06,se:0.37}, gf:{b:1.41,s:1.43,se:0.51}, gm:{b:0.01,s:1.15,se:0.41}, ic:{b:-0.06,s:1.4,se:0.5}} },
+  { slug:"houston", name:"Хьюстон", lat:29.646, lon:-95.279, unit:"F", tier:"B", fams:{ec:{b:-0.29,s:1.26,se:0.4}, gf:{b:-2.57,s:1.18,se:0.37}, gm:{b:-0.24,s:1.16,se:0.37}, ic:{b:-0.54,s:0.71,se:0.23}} },
+  { slug:"ankara", name:"Анкара", lat:40.128, lon:32.995, unit:"C", tier:"C", fams:{ec:{b:0.56,s:1.74,se:0.58}, gf:{b:0.53,s:0.76,se:0.25}, gm:{b:0.43,s:0.74,se:0.25}, ic:{b:1.32,s:1.18,se:0.39}} },
+  { slug:"wuhan", name:"Ухань", lat:30.784, lon:114.208, unit:"C", tier:"C", fams:{ec:{b:2.46,s:0.78,se:0.26}, gf:{b:1.46,s:1.88,se:0.63}, gm:{b:1.54,s:1.13,se:0.38}, ic:{b:0.8,s:0.93,se:0.31}} },
+  { slug:"guangzhou", name:"Гуанчжоу", lat:23.392, lon:113.299, unit:"C", tier:"C", fams:{ec:{b:2.5,s:2.15,se:0.81}, gf:{b:2.97,s:2.5,se:0.94}, gm:{b:2.26,s:1.09,se:0.41}, ic:{b:0.81,s:1.32,se:0.5}} },
+  { slug:"denver", name:"Денвер", lat:39.702, lon:-104.752, unit:"F", tier:"C", fams:{ec:{b:1.33,s:1.0,se:0.31}, gf:{b:-0.73,s:1.3,se:0.41}, gm:{b:1.37,s:1.57,se:0.5}, ic:{b:0.15,s:1.28,se:0.41}} },
+  { slug:"istanbul", name:"Стамбул", lat:41.276, lon:28.752, unit:"C", tier:"B", fams:{ec:{b:0.31,s:0.74,se:0.25}, gf:{b:-0.56,s:1.15,se:0.38}, gm:{b:0.62,s:0.82,se:0.27}, ic:{b:-0.07,s:0.44,se:0.15}} },
+  { slug:"qingdao", name:"Циндао", lat:36.362, lon:120.088, unit:"C", tier:"B", fams:{ec:{b:0.52,s:0.53,se:0.18}, gf:{b:-1.52,s:1.33,se:0.44}, gm:{b:0.13,s:0.97,se:0.32}, ic:{b:0.4,s:0.84,se:0.28}} },
+  { slug:"cape-town", name:"Кейптаун", lat:-33.965, lon:18.602, unit:"C", tier:"C", fams:{ec:{b:0.96,s:1.05,se:0.32}, gf:{b:1.12,s:1.03,se:0.31}, gm:{b:0.67,s:1.08,se:0.33}, ic:{b:1.16,s:2.16,se:0.65}} },
+  { slug:"manila", name:"Манила", lat:14.509, lon:121.02, unit:"C", tier:"C", fams:{ec:{b:1.84,s:1.39,se:0.46}, gf:{b:1.21,s:1.62,se:0.54}, gm:{b:1.3,s:1.87,se:0.62}, ic:{b:-0.48,s:1.45,se:0.48}} },
+  { slug:"austin", name:"Остин", lat:30.1975, lon:-97.6664, unit:"F", tier:"C", fams:{ec:{b:-0.56,s:1.18,se:0.37}, gf:{b:-2.86,s:0.93,se:0.29}, gm:{b:-0.17,s:1.63,se:0.51}, ic:{b:-0.34,s:1.12,se:0.36}} },
+  { slug:"busan", name:"Пусан", lat:35.1795, lon:128.9382, unit:"C", tier:"C", fams:{ec:{b:-1.94,s:1.17,se:0.39}, gf:{b:-1.0,s:1.45,se:0.48}, gm:{b:0.27,s:1.49,se:0.5}, ic:{b:2.0,s:1.71,se:0.57}} },
+  { slug:"shenzhen", name:"Шэньчжэнь", lat:22.6393, lon:113.8107, unit:"C", tier:"C", fams:{ec:{b:0.84,s:1.02,se:0.34}, gf:{b:0.12,s:1.69,se:0.56}, gm:{b:0.67,s:1.88,se:0.63}, ic:{b:0.26,s:1.67,se:0.56}} },
+  { slug:"san-francisco", name:"Сан-Франциско", lat:37.6213, lon:-122.379, unit:"F", tier:"A", fams:{ec:{b:2.33,s:0.65,se:0.2}, gf:{b:0.29,s:0.67,se:0.21}, gm:{b:2.55,s:0.81,se:0.26}, ic:{b:-1.41,s:0.61,se:0.19}} },
+  { slug:"moscow", name:"Москва", lat:55.5915, lon:37.2615, unit:"C", tier:"C", fams:{ec:{b:-0.06,s:2.25,se:0.79}, gf:{b:0.14,s:2.3,se:0.81}, gm:{b:-0.54,s:2.49,se:0.88}, ic:{b:-0.28,s:2.24,se:0.79}} },
 ];
 /* ночные минимумы: отдельная калибровка (2026-08-01), рынки Lowest temperature есть у 8 городов */
-const MIN_CAL = {
-  "hong-kong": { bias: 0.00, n: 0,  std: null, tier: "C" },
-  "london":    { bias: 1.01, n: 8,  std: 1.83, tier: "C" },
-  "miami":     { bias: 0.38, n: 10, std: 0.55, tier: "A" },
-  "nyc":       { bias: 1.21, n: 10, std: 0.69, tier: "A" },
-  "paris":     { bias: 0.38, n: 8,  std: 2.45, tier: "C" },
-  "seoul":     { bias: 0.88, n: 8,  std: 0.73, tier: "A" },
-  "shanghai":  { bias:-0.45, n: 8,  std: 0.64, tier: "A" },
-  "tokyo":     { bias: 0.49, n: 8,  std: 1.00, tier: "B" },
+const MIN_CAL = {  // ночные минимумы, калибровка v2 по семействам
+  "hong-kong": { tier:"C", fams:null },
+  "london": { tier:"C", fams:{ec:{b:0.61,s:1.02,se:0.36}, gf:{b:0.88,s:1.32,se:0.47}, gm:{b:2.29,s:1.59,se:0.56}, ic:{b:0.67,s:1.1,se:0.39}} },
+  "miami": { tier:"B", fams:{ec:{b:0.54,s:1.42,se:0.45}, gf:{b:-2.04,s:1.48,se:0.47}, gm:{b:1.02,s:1.27,se:0.4}, ic:{b:0.01,s:1.29,se:0.41}} },
+  "nyc": { tier:"B", fams:{ec:{b:0.99,s:0.88,se:0.28}, gf:{b:0.19,s:1.01,se:0.32}, gm:{b:2.59,s:1.31,se:0.41}, ic:{b:0.6,s:0.93,se:0.29}} },
+  "paris": { tier:"C", fams:{ec:{b:0.16,s:2.56,se:0.91}, gf:{b:1.2,s:2.76,se:0.98}, gm:{b:1.66,s:2.8,se:0.99}, ic:{b:0.23,s:2.29,se:0.81}} },
+  "seoul": { tier:"B", fams:{ec:{b:0.33,s:0.65,se:0.23}, gf:{b:1.85,s:0.79,se:0.28}, gm:{b:1.37,s:0.98,se:0.35}, ic:{b:0.8,s:0.47,se:0.17}} },
+  "shanghai": { tier:"A", fams:{ec:{b:-0.19,s:0.58,se:0.2}, gf:{b:1.96,s:0.64,se:0.23}, gm:{b:0.19,s:0.57,se:0.2}, ic:{b:0.4,s:0.59,se:0.21}} },
+  "tokyo": { tier:"B", fams:{ec:{b:0.15,s:0.95,se:0.34}, gf:{b:-0.75,s:0.68,se:0.24}, gm:{b:1.29,s:1.13,se:0.4}, ic:{b:-0.41,s:0.48,se:0.17}} },
 };
 let MODE = "max"; // max | min
 const calOf = c => MODE === "min" ? MIN_CAL[c.slug] : c;
@@ -234,7 +234,11 @@ const MONTHS = ["january","february","march","april","may","june","july","august
 const RU_D = ["вс","пн","вт","ср","чт","пт","сб"];
 const RU_M = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
 const LEAD_NAMES = ["сегодня","завтра","послезавтра"];
-const sigmaFor = lead => 0.6 + 0.15*lead;   // погрешность растёт с горизонтом
+const sigmaFor = lead => 0.6 + 0.15*lead;   // резерв, если у семейства нет калибровки
+const feeOf  = a => 0.05*a*(1-a);           // тейкер-комиссия Polymarket, $/акцию
+const allin  = a => a + feeOf(a);           // полная цена входа
+const LAMBDA = 0.25;                        // вес модели в пуле с рынком (фаза валидации)
+const EPS_T  = 0.001;
 
 /* ============ математика ============ */
 function erf(x){
@@ -289,6 +293,36 @@ const fmtDateRu = ds => { const d = new Date(ds + "T12:00:00"); return `${RU_D[d
 /* один запрос ансамбля на город на весь горизонт */
 const famOf = k => k.includes("ecmwf") ? "ec" : k.includes("icon") ? "ic" : k.includes("gem") ? "gm" : "gf";
 
+/* P(бакет) v2: равный вес семейств; каждому члену поправка ЕГО семейства;
+   ядро τ² = max(0.36, s² − разброс_ансамбля²); dbias=±1 — стресс на ±SE семейства */
+function famProb(day, lo, hi, unit, fams, lead, dbias = 0){
+  const avail = ["ec","gf","ic","gm"].filter(f => (day[f]||[]).length >= 8);
+  if (!avail.length) return { p: null, byFam: {} };
+  const cals = fams || {};
+  const known = Object.values(cals);
+  const fb = known.length ? known.reduce((s,v)=>s+v.b,0)/known.length : 0;
+  const byFam = {};
+  let acc = 0;
+  for (const f of avail){
+    const xs = day[f];
+    const mu = xs.reduce((s,x)=>s+x,0)/xs.length;
+    const s2 = xs.reduce((s,x)=>s+(x-mu)*(x-mu),0)/xs.length;
+    const c = cals[f];
+    const b = (c ? c.b : fb) + dbias*(c ? c.se : 0.5);
+    const tau = Math.sqrt(c ? Math.max(0.36, c.s*c.s - s2) : Math.pow(0.6+0.15*lead,2));
+    let tot = 0;
+    const loC = unit === "F" ? (lo>-900 ? f2c(lo) : -999) : lo;
+    const hiC = unit === "F" ? (hi< 900 ? f2c(hi) :  999) : hi;
+    for (const x of xs){
+      const xc = x + b;
+      tot += (hiC>900 ? 1 : phi((hiC-xc)/tau)) - (loC<-900 ? 0 : phi((loC-xc)/tau));
+    }
+    byFam[f] = tot/xs.length;
+    acc += byFam[f];
+  }
+  return { p: acc/avail.length, byFam };
+}
+
 async function fetchCityEnsemble(city, startDate, endDate){
   const ens = await fetchJSON("https://ensemble-api.open-meteo.com/v1/ensemble?" + new URLSearchParams({
     latitude: city.lat, longitude: city.lon, hourly: "temperature_2m",
@@ -338,8 +372,8 @@ async function screenCityDate(city, dateStr, lead, ensData){
   const day = ensData.byDate[dateStr];
   if (!day || day.all.length < 20) return { city, dateStr, lead, skip: "мало данных ансамбля" };
 
-  const sigma = sigmaFor(lead);
-  const db = Math.max(0.5, cal.std ?? 0.5);   // окно перепроверки = реальный разброс поправки
+  const famsCal = cal.fams || null;   // калибровка v2 по семействам (или null у тира C без данных)
+  const db = 0.5;                     // подпись в карточке; сам стресс идёт по SE семейств
   const buckets = [];
   for (const m of ev.markets){
     const rng = parseBucket(m.groupItemTitle);
@@ -349,18 +383,27 @@ async function screenCityDate(city, dateStr, lead, ensData){
     const bb = m.bestBid ?? null, ba = m.bestAsk ?? null;
     const mid = (bb != null && ba != null) ? (bb+ba)/2 : (prices ? +prices[0] : null);
     if (mid == null) continue;
-    const fams = {};
-    for (const [f] of FAMS)
-      if (day[f].length >= 15) fams[f] = bucketProb(day[f], rng[0], rng[1], city.unit, cal.bias, sigma);
+    const base = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, 0);
+    if (base.p == null) continue;
+    const lo1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, -1).p;
+    const hi1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, +1).p;
     let tid = null;
     try { const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds; tid = (t && t[0]) || null; } catch(e){}
     buckets.push({
       title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid,
-      p:   bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias, sigma),
-      pLo: bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias - db, sigma),
-      pHi: bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias + db, sigma),
-      fams,
+      pRaw: base.p, pLoRaw: lo1, pHiRaw: hi1, fams: base.byFam,
     });
+  }
+  // усадка к рынку: нормализованный лог-пул p^λ·q^(1−λ) по бакетам события (фаза валидации)
+  if (buckets.length >= 3){
+    const qsum = buckets.reduce((s,b)=>s+Math.max(b.mid,EPS_T),0) || 1;
+    for (const key of [["pRaw","p"],["pLoRaw","pLo"],["pHiRaw","pHi"]]){
+      const nums = buckets.map(b => Math.pow(Math.max(b[key[0]],EPS_T),LAMBDA) * Math.pow(Math.max(b.mid,EPS_T)/qsum,1-LAMBDA));
+      const z = nums.reduce((s,x)=>s+x,0) || 1;
+      buckets.forEach((b,i)=>{ b[key[1]] = nums[i]/z; });
+    }
+  } else {
+    for (const b of buckets){ b.p = b.pRaw; b.pLo = b.pLoRaw; b.pHi = b.pHiRaw; }
   }
   return { city, dateStr, lead, volume: +ev.volume || 0, buckets, db, sumAsk, cal, mode: MODE,
            link: "https://polymarket.com/event/" + slugFor(city, dateStr) };
@@ -390,27 +433,30 @@ function findTrades(r){
   const volPen = r.volume < 30000 ? 1 : 0;
   const c = r.cal;
   for (const b of r.buckets){
-    const { ask, bid, mid, p } = b;
+    const { ask, bid, mid, p } = b;   // p — рабочая (усаженная к рынку); b.pRaw — сырая модельная
     const famVals = Object.values(b.fams);
-    if (ask != null && ask >= 0.02 && ask <= 0.25 && p >= 2*ask && p >= 0.08){
-      const robust = b.pLo >= 1.5*ask && b.pHi >= 1.5*ask;
-      const mn = famVals.length ? Math.min(...famVals) : p;
-      const agreeBonus = mn >= 0.5*p ? 1 : (mn < 0.25*p ? -1 : 0);
-      const spread = bid != null ? ask-bid : ask;
-      let conf = 3 + (robust?1:0) + agreeBonus - (spread>0.08?1:0) - (c.n<3?1:0) - volPen - (r.lead>=2?1:0);
-      if (c.tier === "C") conf = Math.min(conf, 2);
-      out.push({ side:"YES", r, b, cost: ask, ev: p*(1/ask-1)-(1-p),
-                 conf: Math.max(1, Math.min(5, conf)), robust, split: mn < 0.5*p, thin: volPen>0 });
+    if (ask != null){
+      const cFull = allin(ask);       // полная цена с тейкер-комиссией
+      if (cFull >= 0.04 && cFull <= 0.30 && p >= 1.8*cFull && b.pRaw >= 2*ask && p >= 0.05){
+        const robust = b.pLo >= 1.4*cFull && b.pHi >= 1.4*cFull;
+        const mn = famVals.length ? Math.min(...famVals) : b.pRaw;
+        const agreeBonus = mn >= 0.5*b.pRaw ? 1 : (mn < 0.25*b.pRaw ? -1 : 0);
+        const spread = bid != null ? ask-bid : ask;
+        let conf = 3 + (robust?1:0) + agreeBonus - (spread>0.08?1:0) - volPen - (r.lead>=2?1:0);
+        if (c.tier === "C") conf = Math.min(conf, 2);
+        out.push({ side:"YES", r, b, cost: cFull, ask, ev: p*(1/cFull-1)-(1-p),
+                   conf: Math.max(1, Math.min(5, conf)), robust, split: mn < 0.5*b.pRaw, thin: volPen>0 });
+      }
     }
-    if (bid != null && mid >= 0.25 && (mid-p) >= 0.15){
-      const noAsk = 1-bid;
-      const robust = (mid-b.pHi >= 0.10) && (mid-b.pLo >= 0.10);
+    if (bid != null && mid >= 0.25 && (mid-p) >= 0.12){
+      const cFull = allin(1-bid);
+      const robust = (mid-b.pHi >= 0.08) && (mid-b.pLo >= 0.08);
       const agree = famVals.every(pf => mid-pf >= 0.10);
       const refute = famVals.some(pf => pf >= mid);
       const agreeBonus = agree ? 1 : (refute ? -1 : 0);
-      let conf = 3 + (robust?1:0) + agreeBonus - (c.n<3?1:0) - volPen - (r.lead>=2?1:0);
+      let conf = 3 + (robust?1:0) + agreeBonus - volPen - (r.lead>=2?1:0);
       if (c.tier === "C") conf = Math.min(conf, 2);
-      out.push({ side:"NO", r, b, cost: noAsk, ev: (1-p)*(1/noAsk-1)-p,
+      out.push({ side:"NO", r, b, cost: cFull, ask: 1-bid, ev: (1-p)*(1/cFull-1)-p,
                  conf: Math.max(1, Math.min(5, conf)), robust, split: refute, thin: volPen>0 });
     }
   }
@@ -437,14 +483,15 @@ function chanceCombos(r){
   // выигрыш — если исход попал в ЛЮБОЙ бакет набора. Жадный набор по ценности p/ask.
   if (r.skip || (r.volume || 0) < 10000) return [];
   const cand = r.buckets
-    .filter(b => b.ask != null && b.ask >= 0.001 && b.ask <= 0.9 && b.p >= 0.03)
-    .sort((a,z) => z.p/z.ask - a.p/a.ask);
+    .filter(b => b.ask != null && b.ask >= 0.03 && b.ask <= 0.9 && b.p >= 0.03)  // фаза валидации: ноги < 3¢ запрещены
+    .sort((a,z) => z.p/allin(z.ask) - a.p/allin(a.ask));
   const steps = []; const S = []; let cost = 0, P = 0, Plo = 0, Phi = 0;
   for (const b of cand){
     if (S.length >= 4) break;
-    if (cost + b.ask > 0.90) continue;
-    if ((P + b.p)/(cost + b.ask) - 1 < 0.15) break;
-    S.push(b); cost += b.ask; P += b.p; Plo += b.pLo; Phi += b.pHi;
+    const ca = allin(b.ask);                       // полная цена ноги с комиссией
+    if (cost + ca > 0.90) continue;
+    if ((P + b.p)/(cost + ca) - 1 < 0.15) break;
+    S.push(b); cost += ca; P += b.p; Plo += b.pLo; Phi += b.pHi;
     if (S.length >= 2 && P >= 0.40)
       steps.push({ r, buckets: [...S].sort((a,z) => a.lo - z.lo), cost, pWin: P,
                    pLo: Math.min(Plo, Phi), pHi: Math.max(Plo, Phi) });
@@ -521,11 +568,15 @@ function cityCard(g, stake, rank){
   }
   const depthTxt = depthParts.length ? ` · глубина по цене входа: ${depthParts.join(" / ")}` : "";
   const bkr = Math.max(5, +$("bankrollInput").value || 34), lim = Math.max(1, +$("limitInput").value || 6);
-  const stY = Y ? kellyStake(Y.b.p, Math.min(Y.b.pLo, Y.b.pHi), Y.b.ask, bkr, lim, Y.depth) : 0;
+  const stY = Y ? kellyStake(Y.b.p, Math.min(Y.b.pLo, Y.b.pHi), allin(Y.b.ask), bkr, lim, Y.depth) : 0;
   const stN = N ? kellyStake(1-N.b.p, 1-Math.max(N.b.pLo, N.b.pHi), N.cost, bkr, lim, N.depth) : 0;
   const sizeLine = `<div class="why" style="margin-top:-4px"><b>Рекомендуемый размер</b> (четверть Келли от банкролла $${bkr}): ${[Y ? `YES ${stY ? "$"+stY.toFixed(2) : "не ставить"}` : null, N ? `NO ${stN ? "$"+stN.toFixed(2) : "не ставить"}` : null].filter(Boolean).join(" · ")} · исполнение: цена &lt;10¢ или тонкий стакан — лимит по аску, иначе можно маркетом</div>`;
   const cal = r.cal;
-  const robustNote = `перепроверка: поправка ${cal.bias >= 0 ? "+" : ""}${cal.bias.toFixed(1)}±${r.db.toFixed(1)}°C → p(YES-цели) ${Y ? `${fmtP(Math.min(Y.b.pLo,Y.b.pHi))}–${fmtP(Math.max(Y.b.pLo,Y.b.pHi))}` : "—"}`;
+  const fams1 = cal.fams || {};
+  const famTxt = Object.keys(fams1).length
+    ? Object.entries(fams1).map(([f,v]) => `${f}${v.b>=0?"+":""}${v.b.toFixed(1)}`).join(" ")
+    : "нет данных";
+  const robustNote = `поправки по семействам: ${famTxt} → p ${Y ? `${fmtP(Math.min(Y.b.pLo,Y.b.pHi))}–${fmtP(Math.max(Y.b.pLo,Y.b.pHi))}` : "—"}`;
   return `<div class="card pick">
     <div class="pick-head">
       <span class="pick-city">${rank}. ${esc(c.name)}<span class="datebadge">${r.mode === "min" ? "МИНИМУМ · " : ""}${LEAD_NAMES[g.r.lead]}, ${fmtDateRu(r.dateStr)}</span></span>
@@ -537,7 +588,7 @@ function cityCard(g, stake, rank){
     <div class="legend"><span class="l-model">модель (наша оценка)</span><span class="l-market">рынок (цена)</span></div>
     <div class="bars">${top}</div>
     ${payout}
-    <div class="meta">${famLine(ref)} · калибровка ${r.mode === "min" ? "минимумов " : ""}${cal.tier} (n=${cal.n}) · ${robustNote} · спред ${ref.bid != null ? fmtC(ref.ask-ref.bid) : "—"} · объём $${Math.round(r.volume).toLocaleString("en-US")}${depthTxt}</div>
+    <div class="meta">${famLine(ref)} · калибровка v2 ${r.mode === "min" ? "минимумов " : ""}тир ${cal.tier} · ${robustNote} · спред ${ref.bid != null ? fmtC(ref.ask-ref.bid) : "—"} · объём $${Math.round(r.volume).toLocaleString("en-US")}${depthTxt}</div>
     ${chips.length ? `<div class="chips">${chips.join("")}</div>` : ""}
     <div style="margin-top:10px"><a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть рынок (резолюция — местный день города) →</a></div>
   </div>`;
@@ -704,8 +755,8 @@ async function scan(){
   if (sBest){
     const st = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, limit) || 1;
     const nSets = st/sBest.cost;
-    const vLegs = sBest.buckets.map(b => { const sh = Math.max(nSets, 1/b.ask); return `${esc(b.title)} ≤${fmtC(b.ask)} × ${sh.toFixed(1)} акц ($${(sh*b.ask).toFixed(2)})`; }).join(" · ");
-    const vUsd = sBest.buckets.reduce((s,b) => s + Math.max(nSets, 1/b.ask)*b.ask, 0);
+    const vLegs = sBest.buckets.map(b => { const sh = Math.max(nSets, 1/b.ask); return `${esc(b.title)} ≤${fmtC(b.ask)} × ${sh.toFixed(1)} акц ($${(sh*allin(b.ask)).toFixed(2)} с комиссией)`; }).join(" · ");
+    const vUsd = sBest.buckets.reduce((s,b) => s + Math.max(nSets, 1/b.ask)*allin(b.ask), 0);
     html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${st.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» — цель ${nSets.toFixed(1)} акц/нога, но минимум биржи $1 на ордер поднимает дешёвые ноги <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера: ${vLegs} — итого $${vUsd.toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · при попадании +$${(st*(1/sBest.cost-1)).toFixed(2)}, мимо −$${st.toFixed(2)} · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll} по осторожной вероятности. Покупать ЛИМИТ-ордерами: цена = текущий аск (потолок +1¢). Минимум биржи — $1 на ордер, поэтому в дешёвых бакетах акций больше (суммы по ногам выровнены до $1). Лимит по аску исполняется сразу, но защищает от проскальзывания.</div></div>`;
   } else if (vConf >= 5){
     html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
@@ -780,10 +831,23 @@ function init(){
       const j = JSON.parse($("calibInput").value);
       if (!j.cities) throw new Error("нет поля cities");
       let applied = 0;
+      const toFams = u => {   // v2: {fams:{"1":{ec:{bias,std,se},...}}} -> {ec:{b,s,se},...}; v1 -> одна поправка всем
+        const f1 = u.fams && (u.fams["1"] || u.fams[1]);
+        if (f1 && Object.keys(f1).length){
+          const out = {};
+          for (const f in f1) out[f] = { b:+f1[f].bias, s:+f1[f].std, se:+(f1[f].se ?? (f1[f].std/Math.sqrt(f1[f].n||4))) };
+          return out;
+        }
+        if (u.bias != null && u.std != null){
+          const one = { b:+u.bias, s:+u.std, se:+(u.std/Math.sqrt(u.n||4)) };
+          return { ec:one, gf:one, ic:one, gm:one };
+        }
+        return null;
+      };
       for (const c of CITIES){
         const u = j.cities[c.slug];
         if (!u) continue;
-        c.bias = +u.bias; c.n = +u.n; c.std = u.std == null ? null : +u.std; c.tier = u.tier || "C";
+        c.fams = toFams(u); c.tier = u.tier || "C";
         $("city_"+c.slug).checked = c.tier !== "C";
         applied++;
       }
@@ -793,7 +857,8 @@ function init(){
       if (j.cities_min){
         for (const slug in j.cities_min){
           if (MIN_CAL[slug] !== undefined || CITIES.some(c => c.slug === slug)){
-            MIN_CAL[slug] = j.cities_min[slug]; appliedMin++;
+            const u = j.cities_min[slug];
+            MIN_CAL[slug] = { tier: u.tier || "C", fams: toFams(u) }; appliedMin++;
           }
         }
       }

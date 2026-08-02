@@ -30,15 +30,16 @@ ST = {  # slug: (icao|None, lat, lon, unit, ru)
  "austin":("KAUS",30.1975,-97.6664,"F","Остин"), "busan":("RKPK",35.1795,128.9382,"C","Пусан"),
  "shenzhen":("ZGSZ",22.6393,113.8107,"C","Шэньчжэнь"), "san-francisco":("KSFO",37.6213,-122.379,"F","Сан-Франциско"),
  "moscow":("UUWW",55.5915,37.2615,"C","Москва")}
-REF_BIAS = {"london":-0.06,"paris":1.02,"milan":0.44,"munich":2.52,"madrid":0.48,"warsaw":-0.26,
- "amsterdam":1.32,"nyc":-0.62,"chicago":0.04,"dallas":-0.12,"miami":1.39,"atlanta":0.58,
- "seattle":0.58,"toronto":0.18,"seoul":1.68,"tokyo":-1.98,"shanghai":-0.81,"singapore":1.43,
- "hong-kong":0.0,"wellington":1.03,"sao-paulo":0.17,"buenos-aires":1.15,"mexico-city":-0.77,
- "chongqing":2.60,"chengdu":0.25,"kuala-lumpur":0.40,"los-angeles":-6.55,"tel-aviv":-2.54,
- "beijing":0.41,"taipei":1.98,"helsinki":1.60,"lucknow":0.80,"jeddah":-2.15,"karachi":-1.33,
- "houston":0.34,"ankara":0.49,"wuhan":1.65,"guangzhou":2.21,"denver":1.10,"istanbul":0.00,
- "qingdao":0.32,"cape-town":0.82,"manila":1.31,
- "austin":0.27,"busan":-1.47,"shenzhen":0.86,"san-francisco":1.94,"moscow":-0.05}  # 2026-08-01, новые города 2026-08-02
+REF_BIAS = {  # эталон: поправка ECMWF на горизонте 1 сутки (previous_day1), 2026-08-02
+ "london":0.12,"paris":1.13,"milan":1.09,"munich":2.3,"madrid":0.33,"warsaw":-0.08,
+ "amsterdam":1.28,"nyc":-0.53,"chicago":-1.23,"dallas":-1.99,"miami":1.61,"atlanta":0.64,
+ "seattle":0.48,"toronto":0.06,"seoul":1.74,"tokyo":-1.89,"shanghai":0.07,"singapore":1.76,
+ "wellington":0.75,"sao-paulo":0.39,"buenos-aires":0.68,"mexico-city":-0.46,"chongqing":2.48,
+ "chengdu":0.0,"kuala-lumpur":1.15,"los-angeles":-7.8,"tel-aviv":-2.43,"beijing":0.8,
+ "taipei":2.17,"helsinki":1.82,"lucknow":1.46,"jeddah":-1.54,"karachi":-1.38,"houston":-0.29,
+ "ankara":0.56,"wuhan":2.46,"guangzhou":2.5,"denver":1.33,"istanbul":0.31,"qingdao":0.52,
+ "cape-town":0.96,"manila":1.84,"austin":-0.56,"busan":-1.94,"shenzhen":0.84,
+ "san-francisco":2.33,"moscow":-0.06}  # 2026-08-01, новые города 2026-08-02
 MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"]
 
 def get(url, tries=3):
@@ -68,15 +69,19 @@ REF_BIAS_MIN = {"hong-kong":0.0,"london":1.01,"miami":0.38,"nyc":1.21,"paris":0.
                 "seoul":0.88,"shanghai":-0.45,"tokyo":0.49}  # 2026-08-01
 
 def calibrate(slug, is_min=False):
+    """Lead-matched калибровка по семействам моделей: прогноз, каким он был за 24ч и 48ч
+    до дня (Previous Runs API, previous_day1/2), против факта METAR. Отдельные bias/std/SE
+    каждому семейству — поправка ECMWF не переносится на GFS/ICON/GEM (урок Мюнхена 2 авг:
+    ECMWF требовал +2.3°, ICON +0.3°, а мы прибавляли +2.5° всем)."""
     icao, lat, lon, unit, _ = ST[slug]
-    if icao is None: return dict(bias=0.0, n=0, std=None, tier="C")
+    if icao is None: return dict(fams={"1": {}, "2": {}}, tier="C", bias=0.0, std=None, n=0)
     now = datetime.now(timezone.utc)
-    start = (now - timedelta(days=10)).strftime("%Y-%m-%d"); today = now.strftime("%Y-%m-%d")
-    h = get("https://historical-forecast-api.open-meteo.com/v1/forecast?"
-            f"latitude={lat}&longitude={lon}&hourly=temperature_2m&models=ecmwf_ifs025"
-            f"&timezone=auto&start_date={start}&end_date={today}")
-    model = daymax(h["hourly"]["time"], h["hourly"]["temperature_2m"], is_min=is_min)
-    off = h.get("utc_offset_seconds", 0)
+    d = get("https://previous-runs-api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}"
+            "&hourly=temperature_2m_previous_day1,temperature_2m_previous_day2"
+            "&models=ecmwf_ifs025,gfs_global,icon_seamless,gem_global"  # gfs025 в previous-runs пуст — gfs_global
+            "&timezone=auto&past_days=10&forecast_days=1")
+    off = d.get("utc_offset_seconds", 0)
     obs = {}
     for o in get(f"https://aviationweather.gov/api/data/metar?ids={icao}&format=json&hours=336"):
         t, temp = o.get("reportTime"), o.get("temp")
@@ -84,15 +89,36 @@ def calibrate(slug, is_min=False):
         dt = datetime.fromisoformat(t.replace("Z","+00:00").replace(".000","")) + timedelta(seconds=off)
         k = dt.strftime("%Y-%m-%d")
         if k not in obs or (temp < obs[k] if is_min else temp > obs[k]): obs[k] = float(temp)
+    today = now.strftime("%Y-%m-%d")
     cutoff = (now - timedelta(days=1)).strftime("%Y-%m-%d") if is_min else \
-             (today if (datetime.now(timezone.utc)+timedelta(seconds=off)).hour >= 19 else \
-              (datetime.now(timezone.utc)-timedelta(days=1)).strftime("%Y-%m-%d"))
-    diffs = [obs[d]-model[d] for d in sorted(model) if d in obs and d <= cutoff]
-    n = len(diffs)
-    if n < 2: return dict(bias=0.0, n=n, std=None, tier="C")
-    mean = sum(diffs)/n; std = math.sqrt(sum((x-mean)**2 for x in diffs)/n)
-    tier = "A" if (n>=6 and std<=0.8 and abs(mean)<=4) else ("B" if (n>=4 and std<=1.5 and abs(mean)<=4) else "C")
-    return dict(bias=round(mean,2), n=n, std=round(std,2), tier=tier)
+             (today if (now+timedelta(seconds=off)).hour >= 19 else \
+              (now-timedelta(days=1)).strftime("%Y-%m-%d"))
+    fams = {"1": {}, "2": {}}
+    for k in d.get("hourly", {}):
+        if k == "time": continue
+        lead = "1" if "previous_day1" in k else "2"
+        fam = fam_of(k)
+        md = daymax(d["hourly"]["time"], d["hourly"][k], is_min=is_min)
+        diffs = [obs[x]-md[x] for x in sorted(md) if x in obs and x <= cutoff]
+        n = len(diffs)
+        if n < 2: continue
+        mean = sum(diffs)/n
+        std = math.sqrt(sum((v-mean)**2 for v in diffs)/n)
+        fams[lead][fam] = dict(bias=round(mean,2), std=round(std,2), n=n,
+                               se=round(std/math.sqrt(n), 2))
+    f1 = fams["1"]
+    if len(f1) >= 2:
+        wst = max(v["std"] for v in f1.values())
+        mn = min(v["n"] for v in f1.values())
+        mb = max(abs(v["bias"]) for v in f1.values())
+        tier = "A" if (mn >= 6 and wst <= 0.9 and mb <= 4) else \
+               ("B" if (mn >= 4 and wst <= 1.5 and mb <= 4) else "C")
+    else:
+        tier = "C"
+    return dict(fams=fams, tier=tier,
+                bias=f1.get("ec", {}).get("bias", 0.0),
+                std=(round(max(v["std"] for v in f1.values()), 2) if f1 else None),
+                n=(min(v["n"] for v in f1.values()) if f1 else 0))
 
 def parse_bucket(t):
     t = (t or "").strip()
@@ -106,20 +132,48 @@ def parse_bucket(t):
     if m: return (float(m.group(1))-0.5, float(m.group(2))+0.5)
     return None
 
-def bprob(members, lo, hi, unit, bias, sigma):
+def fee(a): return 0.05*a*(1-a)   # тейкер-комиссия Polymarket (погода), $/акцию — сверено с реальными сделками
+def allin(a): return a + fee(a)    # полная цена входа за акцию
+
+LAMBDA = 0.25    # вес СВОЕЙ модели в пуле с рынком на фазе валидации (совет внешней ревизии)
+EPS_TICK = 0.001 # минимальный тик цены
+
+def fam_prob(day, rng, unit, fcal, lead, dbias=0.0):
+    """P(бакет): равный вес каждому семейству моделей; каждому члену — поправка ЕГО
+    семейства. Ядро τ_f² = max(0.36, std_f² − разброс_ансамбля²): остаточная
+    неопределённость сверх выраженной разбросом членов — без двойного счёта.
+    dbias=±1 — стресс: сдвиг поправки каждого семейства на ±его SE (не на std!)."""
+    lo, hi = rng
     if unit == "F":
         lo = f2c(lo) if lo > -900 else -999; hi = f2c(hi) if hi < 900 else 999
-    tot = 0.0
-    for x in members:
-        xc = x + bias
-        tot += (1.0 if hi > 900 else phi((hi-xc)/sigma)) - (0.0 if lo < -900 else phi((lo-xc)/sigma))
-    return tot/len(members)
+    fc = fcal.get(str(lead), {}) if fcal else {}
+    avail = [f for f in ("ec","gf","ic","gm") if len(day.get(f) or []) >= 8]
+    if not avail: return None, {}
+    biases = [v["bias"] for v in fc.values()]
+    fb = sum(biases)/len(biases) if biases else 0.0
+    ps = {}
+    for f in avail:
+        xs = day[f]
+        mu = sum(xs)/len(xs)
+        s2 = sum((x-mu)**2 for x in xs)/len(xs)
+        c = fc.get(f)
+        b = (c["bias"] if c else fb) + dbias*((c["se"] if c else 0.5))
+        tau = math.sqrt(max(0.36, (c["std"]**2 - s2)) if c else (0.6 + 0.15*lead)**2)
+        tot = 0.0
+        for x in xs:
+            xc = x + b
+            tot += (1.0 if hi > 900 else phi((hi-xc)/tau)) - (0.0 if lo < -900 else phi((lo-xc)/tau))
+        ps[f] = tot/len(xs)
+    p = sum(ps.values())/len(ps)
+    return p, {k: round(v,3) for k,v in ps.items()}
 
 def fam_of(k):
     return "ec" if "ecmwf" in k else "ic" if "icon" in k else "gm" if "gem" in k else "gf"
 
 BANKROLL = 100.0  # банкролл Дмитрия, $ — обновляется по мере роста счёта
-DAY_LIMIT = 15.0  # дневной лимит, $ — фаза проверки модели; после 30 записанных ставок с подтверждённой точностью поднять до 25
+DAY_LIMIT = 15.0  # дневной лимит, $ — аварийный потолок
+WEATHER_DAY_CAP = 5.0  # фаза валидации: суммарный потолок ПОГОДНЫХ входов одной даты (совет ревизии);
+                       # после 30 записанных ставок с подтверждённой калибровкой поднять
 
 def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25, depth=None):
     """Рекомендуемый размер: четверть Келли по осторожной вероятности
@@ -144,17 +198,18 @@ COMBOS = []  # «шанс-комбо»: наборы бакетов с повы�
 
 def chance_combos(rows, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
     """«Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка.
-    Платим sum(ask) за $1 выплаты, выигрываем если исход попал в набор.
-    Жадный набор по ценности p/ask; шаг фиксируется при P>=min_p и EV>=min_ev.
+    cost — сумма ПОЛНЫХ цен ног (аск + тейкер-комиссия). Фаза валидации: ноги
+    дешевле 3¢ запрещены (переоценка дешёвых хвостов — главный подозреваемый ревизии).
     rows: [{bucket, p, pLo, pHi, ask}]. Возврат: лестница шагов (двойной, тройной...)."""
-    cand = [r for r in rows if r.get("ask") and 0.001 <= r["ask"] <= 0.9 and r["p"] >= 0.03]
-    cand.sort(key=lambda r: -r["p"]/r["ask"])
+    cand = [r for r in rows if r.get("ask") and 0.03 <= r["ask"] <= 0.9 and r["p"] >= 0.03]
+    cand.sort(key=lambda r: -r["p"]/allin(r["ask"]))   # ценность на ПОЛНЫЙ доллар (с комиссией)
     steps, S, cost, P, Plo, Phi = [], [], 0.0, 0.0, 0.0, 0.0
     for r in cand:
         if len(S) >= max_n: break
-        if cost + r["ask"] > max_cost: continue
-        if (P + r["p"])/(cost + r["ask"]) - 1 < min_ev: break
-        S.append((r["bucket"], r["ask"], r.get("tid"), r["p"])); cost += r["ask"]; P += r["p"]
+        ca = allin(r["ask"])
+        if cost + ca > max_cost: continue
+        if (P + r["p"])/(cost + ca) - 1 < min_ev: break
+        S.append((r["bucket"], r["ask"], r.get("tid"), r["p"])); cost += ca; P += r["p"]
         Plo += r.get("pLo", r["p"]); Phi += r.get("pHi", r["p"])
         if len(S) >= 2 and P >= min_p:
             pairs = sorted(S, key=lambda x: (int(re.search(r"-?\d+", x[0]).group()) if re.search(r"-?\d+", x[0]) else 0, 1 if (">" in x[0] or "+" in x[0] or "higher" in x[0] or "above" in x[0]) else -1 if ("<" in x[0] or "≤" in x[0] or "below" in x[0]) else 0))
@@ -181,20 +236,22 @@ def combo_lots(step, min_order=MIN_ORDER, thin_mult=1.5):
         except Exception:
             skipped.append(dict(bucket=b, why="книга недоступна")); continue
         need, sh, usd, lim = target, 0.0, 0.0, ask
-        for price, size in levels:                       # добираем до целевого числа акций
+        for price, size in levels:                       # добираем до целевого числа акций; цена ПОЛНАЯ
             if sh >= need and usd >= min_order: break
-            take = size if (sh + size < need or usd + price*size < min_order) else max(need - sh, (min_order - usd)/price)
+            take = size if (sh + size < need or usd + allin(price)*size < min_order) else max(need - sh, (min_order - usd)/allin(price))
             take = min(take, size)
-            sh += take; usd += price*take; lim = price
+            sh += take; usd += allin(price)*take; lim = price
         if usd < min_order or sh <= 0:
             skipped.append(dict(bucket=b, why="в книге нет объёма даже на $1")); continue
         eff = usd/sh
-        if eff > thin_mult*ask:
+        if eff > thin_mult*allin(ask):
             skipped.append(dict(bucket=b, why=f"тонкая книга: средняя {eff*100:.1f}¢ против аска {ask*100:.1f}¢")); continue
         lots.append(dict(bucket=b, ask=ask, limit=round(lim, 3), shares=round(sh, 1),
                          usd=round(usd, 2), payout=round(sh, 1), p=pp)); total += usd
+    exp_pay = sum((l["p"] or 0)*l["payout"] for l in lots)
     return dict(lots=lots, skipped=skipped, total_usd=round(total, 2),
-                p_covered=round(sum(l["p"] for l in lots if l.get("p")), 3))
+                p_covered=round(sum(l["p"] for l in lots if l.get("p")), 3),
+                ev_final=(round(exp_pay/total - 1, 2) if total > 0.5 else None))
 
 PM_WALLET = ""  # публичный адрес кошелька Polymarket (0x...); пустой = блок портфеля выключен.
                 # В публичном репозитории всегда пусто — адрес живёт только в приватном тексте задачи.
@@ -238,15 +295,18 @@ def portfolio_scan(wallet=None):
                           if (l["outcome"] == "Yes") == (l["bucket"] == b))
                 scen.append(dict(если=b, чистыми=round(ret - spent, 2)))
         events.append(dict(event=slug, spent=spent, legs=legs, scenarios=scen))
-    spent_today = 0.0
+    spent_today, spent_wx = 0.0, 0.0
     try:
         midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         for a in get(f"https://data-api.polymarket.com/activity?user={wallet}&limit=100"):
             if a.get("timestamp", 0) >= midnight and a.get("type") == "TRADE" and a.get("side") == "BUY":
-                spent_today += float(a.get("usdcSize") or 0)
+                v = float(a.get("usdcSize") or 0)
+                spent_today += v
+                if "temperature" in (a.get("eventSlug") or ""): spent_wx += v
     except Exception: pass
     redeem.sort(key=lambda r: -r["payout"])
     return dict(value=value, spent_today=round(spent_today, 2),
+                spent_today_weather=round(spent_wx, 2),
                 day_left=round(max(0.0, DAY_LIMIT - spent_today), 2),
                 events=events, redeemable=redeem[:10], n_redeemable=len(redeem),
                 redeem_total=round(sum(r["payout"] for r in redeem), 2))
@@ -279,9 +339,11 @@ def check_coverage():
     except Exception as e:
         return dict(new_cities=[], lowest_temp_markets=None, err=str(e)[:80])
 
+RES_FAILS = []  # fail-closed: рынки, не прошедшие проверку источника/единиц резолюции
+
 def screen(slug, cal, dates, kind="max"):
     icao, lat, lon, unit, ru = ST[slug]
-    if kind == "min": ru = ru + " (мин)" 
+    if kind == "min": ru = ru + " (мин)"
     q = urllib.parse.urlencode(dict(latitude=lat, longitude=lon, hourly="temperature_2m",
         models="ecmwf_ifs025,gfs025,icon_seamless,gem_global", timezone="auto",
         start_date=dates[0][1], end_date=dates[-1][1]))
@@ -296,10 +358,18 @@ def screen(slug, cal, dates, kind="max"):
         evs = get(f"https://gamma-api.polymarket.com/events?slug={eslug}")
         if not evs or evs[0].get("closed"): continue
         ev = evs[0]
+        desc = ev.get("description") or ""
+        if desc:  # fail-closed: единицы и источник резолюции должны совпадать с моделью
+            um = re.search(r"degrees (Celsius|Fahrenheit)", desc)
+            if um and um.group(1)[0] != unit:
+                RES_FAILS.append(f"{eslug}: рынок в {um.group(1)}, наша модель в °{unit}"); continue
+            if not any(x in desc for x in ("Wunderground", "NOAA", "National Weather Service")):
+                RES_FAILS.append(f"{eslug}: неизвестный источник резолюции"); continue
         vol = float(ev.get("volume") or 0)
         allasks = [m.get("bestAsk") for m in ev["markets"] if parse_bucket(m.get("groupItemTitle"))]
         if len(allasks) >= 5 and all(a is not None for a in allasks):
-            SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3), eslug=eslug))
+            SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
+                               sum_allin=round(sum(allin(a) for a in allasks), 3), eslug=eslug))
         if vol < 10000: continue
         volpen = 1 if vol < 30000 else 0
         day = {"all": [], "ec": [], "gf": [], "ic": [], "gm": []}
@@ -308,9 +378,7 @@ def screen(slug, cal, dates, kind="max"):
             if mx is None: continue
             day["all"].append(mx); day[fam_of(k)].append(mx)
         if len(day["all"]) < 20: continue
-        sigma = 0.6 + 0.15*lead
-        db = max(0.5, cal["std"] if cal["std"] is not None else 0.5)
-        crows = []
+        rows = []
         for m in ev["markets"]:
             rng = parse_bucket(m.get("groupItemTitle"))
             if not rng:
@@ -323,42 +391,61 @@ def screen(slug, cal, dates, kind="max"):
                 except Exception: pr = None
             mid = (bb+ba)/2 if (bb is not None and ba is not None) else (float(pr[0]) if pr else None)
             if mid is None: continue
-            p = bprob(day["all"], *rng, unit, cal["bias"], sigma)
-            pLo = bprob(day["all"], *rng, unit, cal["bias"]-db, sigma)
-            pHi = bprob(day["all"], *rng, unit, cal["bias"]+db, sigma)
-            fams = {f: round(bprob(day[f], *rng, unit, cal["bias"], sigma),3)
-                    for f in ("ec","gf","ic","gm") if len(day[f]) >= 15}
-            fv = list(fams.values())
+            p_raw, fams_p = fam_prob(day, rng, unit, cal["fams"], lead)
+            if p_raw is None: continue
+            pLo_raw, _ = fam_prob(day, rng, unit, cal["fams"], lead, dbias=-1.0)
+            pHi_raw, _ = fam_prob(day, rng, unit, cal["fams"], lead, dbias=+1.0)
             tid = None
             try:
                 ti = m.get("clobTokenIds")
                 ti = json.loads(ti) if isinstance(ti, str) else ti
                 tid = ti[0] if ti else None
             except Exception: pass
-            base = dict(city=ru, slug=slug, date=ds, lead=lead, bucket=m.get("groupItemTitle"),
-                        p=round(p,3), mid=round(mid,3), fams=fams, vol=int(vol), tid=tid,
+            rows.append(dict(bucket=m.get("groupItemTitle"), bb=bb, ba=ba, mid=mid, tid=tid,
+                             p=p_raw, pLo=pLo_raw, pHi=pHi_raw, fams=fams_p))
+        if len(rows) < 3: continue
+        # усадка к рынку: нормализованный лог-пул p^λ · q^(1−λ) по бакетам события
+        qn = [max(r["mid"], EPS_TICK) for r in rows]
+        qs = sum(qn); qn = [x/qs for x in qn]
+        for key in ("p", "pLo", "pHi"):
+            num = [(max(r[key], EPS_TICK)**LAMBDA)*(qq**(1-LAMBDA)) for r, qq in zip(rows, qn)]
+            z = sum(num) or 1.0
+            for r, v in zip(rows, num): r[key+"S"] = v/z
+        crows = []
+        for r in rows:
+            bb, ba, mid = r["bb"], r["ba"], r["mid"]
+            pS, pLoS, pHiS = r["pS"], r["pLoS"], r["pHiS"]
+            fv = list(r["fams"].values())
+            base = dict(city=ru, slug=slug, date=ds, lead=lead, bucket=r["bucket"],
+                        p=round(pS,3), p_model=round(r["p"],3), mid=round(mid,3),
+                        fams=r["fams"], vol=int(vol), tid=r["tid"],
                         link=f"https://polymarket.com/event/{eslug}")
-            crows.append(dict(bucket=m.get("groupItemTitle"), p=p, pLo=pLo, pHi=pHi, ask=ba, tid=tid, pmodel=p))
-            if ba is not None and 0.02 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                robust = pLo >= 1.5*ba and pHi >= 1.5*ba
-                mn = min(fv) if fv else p
-                agree = 1 if mn >= 0.5*p else (-1 if mn < 0.25*p else 0)
-                spread = ba-bb if bb is not None else ba
-                conf = 3 + (1 if robust else 0) + agree - (1 if spread > 0.08 else 0) - (1 if cal["n"] < 3 else 0) - volpen - (1 if lead >= 2 else 0)
-                if cal["tier"] == "C": conf = min(conf, 2)
-                trades.append(dict(base, side="YES", cost=ba, ev=round(p*(1/ba-1)-(1-p),2),
-                                   conf=max(1,min(5,conf)), robust=robust,
-                                   stake=kelly_stake(p, min(pLo, pHi), ba)))
-            if bb is not None and mid >= 0.25 and (mid-p) >= 0.15:
-                noask = 1-bb
-                robust = (mid-pHi >= 0.10) and (mid-pLo >= 0.10)
+            crows.append(dict(bucket=r["bucket"], p=pS, pLo=pLoS, pHi=pHiS, ask=ba,
+                              tid=r["tid"], pmodel=r["p"]))
+            if ba is not None:
+                c = allin(ba)  # полная цена с тейкер-комиссией
+                if 0.04 <= c <= 0.30 and pS >= 1.8*c and r["p"] >= 2*ba and pS >= 0.05:
+                    robust = pLoS >= 1.4*c and pHiS >= 1.4*c
+                    mn = min(fv) if fv else r["p"]
+                    agree = 1 if mn >= 0.5*r["p"] else (-1 if mn < 0.25*r["p"] else 0)
+                    spread = ba-bb if bb is not None else ba
+                    conf = 3 + (1 if robust else 0) + agree - (1 if spread > 0.08 else 0) - volpen - (1 if lead >= 2 else 0)
+                    if cal["tier"] == "C": conf = min(conf, 2)
+                    trades.append(dict(base, side="YES", cost=round(c,3), ask=ba,
+                                       ev=round(pS*(1/c-1)-(1-pS),2),
+                                       conf=max(1,min(5,conf)), robust=robust,
+                                       stake=kelly_stake(pS, min(pLoS, pHiS), c)))
+            if bb is not None and mid >= 0.25 and (mid-pS) >= 0.12:
+                c = allin(1-bb)
+                robust = (mid-pHiS >= 0.08) and (mid-pLoS >= 0.08)
                 agr = all(mid-x >= 0.10 for x in fv); ref = any(x >= mid for x in fv)
                 agree = 1 if agr else (-1 if ref else 0)
-                conf = 3 + (1 if robust else 0) + agree - (1 if cal["n"] < 3 else 0) - volpen - (1 if lead >= 2 else 0)
+                conf = 3 + (1 if robust else 0) + agree - volpen - (1 if lead >= 2 else 0)
                 if cal["tier"] == "C": conf = min(conf, 2)
-                trades.append(dict(base, side="NO", cost=round(noask,3), ev=round((1-p)*(1/noask-1)-p,2),
+                trades.append(dict(base, side="NO", cost=round(c,3), ask=round(1-bb,3),
+                                   ev=round((1-pS)*(1/c-1)-pS,2),
                                    conf=max(1,min(5,conf)), robust=robust,
-                                   stake=kelly_stake(1-p, 1-max(pLo, pHi), noask)))
+                                   stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c)))
         for st in chance_combos(crows):
             COMBOS.append(dict(st, city=ru, date=ds, lead=lead, vol=int(vol), tier=cal["tier"],
                                link=f"https://polymarket.com/event/{eslug}"))
@@ -432,7 +519,9 @@ def quake_scan():
         vol = float(full.get("volume") or 0)
         volpen = 1 if vol < 10000 else 0
         qasks = [m.get("bestAsk") for m in full["markets"] if q_bucket(m.get("groupItemTitle"))]
-        q_sum_ask = round(sum(qasks), 3) if (len(qasks) >= 3 and all(a is not None for a in qasks)) else None
+        ok_asks = len(qasks) >= 3 and all(a is not None for a in qasks)
+        q_sum_ask = round(sum(qasks), 3) if ok_asks else None
+        q_sum_allin = round(sum(allin(a) for a in qasks), 3) if ok_asks else None
         picks, watch, qrows = [], [], []
         for m in full["markets"]:
             rng = q_bucket(m.get("groupItemTitle"))
@@ -445,22 +534,23 @@ def quake_scan():
             pLo = q_prange(*rng, n_obs, lam*0.7)
             pHi = q_prange(*rng, n_obs, lam*1.4)
             qrows.append(dict(bucket=m.get("groupItemTitle"), p=p, pLo=pLo, pHi=pHi, ask=ba))
-            if ba is not None and 0.02 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                robust = pLo >= 1.5*ba and pHi >= 1.5*ba
+            if ba is not None and 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
+                c = allin(ba)
+                robust = pLo >= 1.5*c and pHi >= 1.5*c
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=ba,
-                    p=round(p,3), mid=round(mid,3), ev=round(p*(1/ba-1)-(1-p),2), conf=conf,
-                    stake=kelly_stake(p, min(pLo, pHi), ba)))
+                (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=round(c,3),
+                    p=round(p,3), mid=round(mid,3), ev=round(p*(1/c-1)-(1-p),2), conf=conf,
+                    stake=kelly_stake(p, min(pLo, pHi), c)))
             if bb is not None and mid >= 0.25 and (mid-p) >= 0.15:
-                noask = 1-bb
+                c = allin(1-bb)
                 robust = (mid-pLo >= 0.10) and (mid-pHi >= 0.10)
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(noask,3),
-                    p=round(p,3), mid=round(mid,3), ev=round((1-p)*(1/noask-1)-p,2), conf=conf,
-                    stake=kelly_stake(1-p, 1-max(pLo, pHi), noask)))
+                (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(c,3),
+                    p=round(p,3), mid=round(mid,3), ev=round((1-p)*(1/c-1)-p,2), conf=conf,
+                    stake=kelly_stake(1-p, 1-max(pLo, pHi), c)))
         out.append(dict(title=full["title"], n_obs=n_obs, borderline=borderline, t_rem_days=round(t_rem,1),
                         lam_rem=round(lam,2), vol=int(vol), picks=picks, watch=watch[:4],
-                        combos=chance_combos(qrows)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask,
+                        combos=chance_combos(qrows)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask, sum_allin=q_sum_allin,
                         link=f"https://polymarket.com/event/{slug}"))
     return out
 
@@ -554,23 +644,25 @@ def crypto_scan():
                 if pa is None or pb is None: continue
                 lo, hi = min(pa, pb), max(pa, pb)
                 row = dict(strike=int(K), p=round(p,3), mid=round(mid,3))
-                if 0.02 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                    conf = max(1, min(5, 3 + (1 if lo >= 1.5*ba else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=ba,
-                        ev=round(p*(1/ba-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, ba)))
+                if 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
+                    c = allin(ba)
+                    conf = max(1, min(5, 3 + (1 if lo >= 1.5*c else 0) - volpen))
+                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
+                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
                 if mid >= 0.25 and (mid-p) >= 0.15:
-                    noask = 1-bb
+                    c = allin(1-bb)
                     conf = max(1, min(5, 3 + (1 if (mid-hi) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(noask,3),
-                        ev=round((1-p)*(1/noask-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, noask)))
+                    (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(c,3),
+                        ev=round((1-p)*(1/c-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, c)))
                 if ba > 0.25 and (p-mid) >= 0.15:
+                    c = allin(ba)
                     conf = max(1, min(5, 3 + (1 if (lo-mid) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=ba,
-                        ev=round(p*(1/ba-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, ba)))
+                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
+                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
             arbs = []
             for (k1, b1, a1), (k2, b2, a2) in zip(sorted(klist), sorted(klist)[1:]):
-                c = a1 + (1 - b2)
-                if c < 0.995:
+                c = allin(a1) + allin(1 - b2)   # полные цены обеих ног
+                if c < 0.99:
                     arbs.append(dict(k1=int(k1), k2=int(k2), cost=round(c, 3), profit=round(1-c, 3)))
             if picks or watch or arbs:
                 out.append(dict(title=ev["title"], date=d.strftime("%Y-%m-%d"), vol=int(vol),
@@ -585,7 +677,7 @@ def main():
     for slug in ST:
         try: calib[slug] = calibrate(slug)
         except Exception as e:
-            calib[slug] = dict(bias=REF_BIAS.get(slug,0.0), n=0, std=None, tier="C")
+            calib[slug] = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS.get(slug,0.0), n=0, std=None, tier="C")
             errors.append(f"calib {slug}: {e}")
     for slug in ST:
         try: trades += screen(slug, calib[slug], dates)
@@ -594,7 +686,7 @@ def main():
     for slug in MIN_SLUGS:
         try: calib_min[slug] = calibrate(slug, is_min=True)
         except Exception as e:
-            calib_min[slug] = dict(bias=REF_BIAS_MIN.get(slug,0.0), n=0, std=None, tier="C")
+            calib_min[slug] = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS_MIN.get(slug,0.0), n=0, std=None, tier="C")
             errors.append(f"calib_min {slug}: {e}")
     for slug in MIN_SLUGS:
         try: trades += screen(slug, calib_min[slug], dates, kind="min")
@@ -623,8 +715,8 @@ def main():
         except Exception:
             t["depth_usd"] = None
     for t in trades: t.pop("tid", None)
-    sloppy = sorted(SLOPPY, key=lambda x: x["sum_ask"])
-    pure_arb = [x for x in sloppy if x["sum_ask"] < 0.99]
+    sloppy = sorted(SLOPPY, key=lambda x: x.get("sum_allin", x["sum_ask"]))
+    pure_arb = [x for x in sloppy if x.get("sum_allin", 1) < 0.995]   # с учётом комиссий
     seen_ct, combo_top = {}, []
     for c in sorted(COMBOS, key=lambda c: (-c["p_win"], -c["ev"])):
         k = (c["city"], c["date"])
@@ -645,7 +737,7 @@ def main():
                 book = get(f"https://clob.polymarket.com/book?token_id={ti[0]}")
                 asks = sorted((float(a["price"]), float(a["size"])) for a in book.get("asks", []))
                 if not asks: sets = 0.0; break
-                cost_eff += asks[0][0]
+                cost_eff += allin(asks[0][0])
                 sets = asks[0][1] if sets is None else min(sets, asks[0][1])
             x["exec_sets"] = int(sets or 0)
             x["exec_cost"] = round(cost_eff, 3)
@@ -682,8 +774,8 @@ def main():
     def ev_verdict(markets, want_arb_key=None):
         best = None
         for mkt in markets:
-            if want_arb_key == "sum" and mkt.get("sum_ask") is not None and mkt["sum_ask"] < 0.99:
-                return dict(kind="чистый арбитраж", market=mkt["title"], sum_ask=mkt["sum_ask"], link=mkt["link"])
+            if want_arb_key == "sum" and mkt.get("sum_allin") is not None and mkt["sum_allin"] < 0.995:
+                return dict(kind="чистый арбитраж", market=mkt["title"], sum_ask=mkt["sum_ask"], sum_allin=mkt["sum_allin"], link=mkt["link"])
             if want_arb_key == "arbs" and mkt.get("arbs"):
                 return dict(kind="арбитраж-связка", market=mkt["title"], arbs=mkt["arbs"], link=mkt["link"])
             for pk in mkt.get("picks", []):
@@ -696,10 +788,24 @@ def main():
         quakes=ev_verdict(quakes, "sum") or ev_verdict(quakes),
         crypto=ev_verdict(crypto, "arbs") or ev_verdict(crypto),
     )
+    # бюджет дня в коде: $15 общий, $5 на погодные входы одной даты (фаза валидации)
+    spent = portfolio["spent_today"] if portfolio else 0.0
+    spent_wx = (portfolio or {}).get("spent_today_weather", 0.0)
+    budget = dict(day_limit=DAY_LIMIT, weather_cap=WEATHER_DAY_CAP,
+                  spent_today=round(spent, 2), spent_today_weather=round(spent_wx, 2),
+                  day_left=round(max(0.0, DAY_LIMIT - spent), 2),
+                  weather_left=round(max(0.0, WEATHER_DAY_CAP - spent_wx), 2))
+    for v in (verdicts.get("max"), verdicts.get("min")):
+        if v and v.get("stake"): v["stake"] = min(v["stake"], budget["weather_left"])
+    if series is not None and series.get("stake"):
+        series["stake"] = min(series["stake"], budget["weather_left"])
     print(json.dumps(dict(
         generated=now.strftime("%Y-%m-%d %H:%M UTC"),
         bankroll=BANKROLL, day_limit=DAY_LIMIT, min_order=MIN_ORDER,
-        portfolio=portfolio,
+        budget=budget, portfolio=portfolio,
+        model_policy=dict(lambda_model=LAMBDA, fee="тейкер 0.05·цена·(1−цена) с акции",
+                          min_leg_ask=0.03, note="фаза валидации: усадка к рынку, дешёвые хвосты запрещены"),
+        res_checks=RES_FAILS,
         verdicts=verdicts,
         calib_json=dict(cal_date=now.strftime("%Y-%m-%d"), cities=calib, cities_min=calib_min),
         picks=picks[:12], watch=watch[:10], chance_combos=combo_top[:10], series_pick=series,

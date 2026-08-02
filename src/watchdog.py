@@ -47,6 +47,9 @@ def q_prange(lo, hi, n_obs, lam):
 BANKROLL = 100.0  # банкролл Дмитрия, $ — обновляется по мере роста счёта
 DAY_LIMIT = 15.0  # дневной лимит, $ — фаза проверки; после 30 ставок с подтверждённой точностью поднять до 25
 
+def fee(a): return 0.05*a*(1-a)   # тейкер-комиссия Polymarket, $/акцию
+def allin(a): return a + fee(a)    # полная цена входа
+
 def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25):
     """Рекомендуемый размер: четверть Келли по осторожной вероятности
     p_use = (базовая + стрессовая)/2. 0 = не ставить. Минимум сделки $1."""
@@ -64,14 +67,15 @@ def chance_combos(rows, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
     """«Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка.
     Платим sum(ask) за $1 выплаты, выигрываем если исход попал в набор.
     Жадный набор по ценности p/ask; шаг фиксируется при P>=min_p и EV>=min_ev."""
-    cand = [r for r in rows if r.get("ask") and 0.001 <= r["ask"] <= 0.9 and r["p"] >= 0.03]
-    cand.sort(key=lambda r: -r["p"]/r["ask"])
+    cand = [r for r in rows if r.get("ask") and 0.03 <= r["ask"] <= 0.9 and r["p"] >= 0.03]
+    cand.sort(key=lambda r: -r["p"]/allin(r["ask"]))
     steps, S, cost, P, Plo, Phi = [], [], 0.0, 0.0, 0.0, 0.0
     for r in cand:
         if len(S) >= max_n: break
-        if cost + r["ask"] > max_cost: continue
-        if (P + r["p"])/(cost + r["ask"]) - 1 < min_ev: break
-        S.append((r["bucket"], r["ask"], r.get("tid"), r["p"])); cost += r["ask"]; P += r["p"]
+        ca = allin(r["ask"])
+        if cost + ca > max_cost: continue
+        if (P + r["p"])/(cost + ca) - 1 < min_ev: break
+        S.append((r["bucket"], r["ask"], r.get("tid"), r["p"])); cost += ca; P += r["p"]
         Plo += r.get("pLo", r["p"]); Phi += r.get("pHi", r["p"])
         if len(S) >= 2 and P >= min_p:
             pairs = sorted(S, key=lambda x: (int(re.search(r"-?\d+", x[0]).group()) if re.search(r"-?\d+", x[0]) else 0, 1 if (">" in x[0] or "+" in x[0] or "higher" in x[0] or "above" in x[0]) else -1 if ("<" in x[0] or "≤" in x[0] or "below" in x[0]) else 0))
@@ -115,7 +119,9 @@ def quake_scan():
         vol = float(full.get("volume") or 0)
         volpen = 1 if vol < 10000 else 0
         qasks = [m.get("bestAsk") for m in full["markets"] if q_bucket(m.get("groupItemTitle"))]
-        q_sum_ask = round(sum(qasks), 3) if (len(qasks) >= 3 and all(a is not None for a in qasks)) else None
+        ok_asks = len(qasks) >= 3 and all(a is not None for a in qasks)
+        q_sum_ask = round(sum(qasks), 3) if ok_asks else None
+        q_sum_allin = round(sum(allin(a) for a in qasks), 3) if ok_asks else None
         picks, watch, qrows = [], [], []
         for m in full["markets"]:
             rng = q_bucket(m.get("groupItemTitle"))
@@ -128,22 +134,23 @@ def quake_scan():
             pLo = q_prange(*rng, n_obs, lam*0.7)
             pHi = q_prange(*rng, n_obs, lam*1.4)
             qrows.append(dict(bucket=m.get("groupItemTitle"), p=p, pLo=pLo, pHi=pHi, ask=ba))
-            if ba is not None and 0.02 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                robust = pLo >= 1.5*ba and pHi >= 1.5*ba
+            if ba is not None and 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
+                c = allin(ba)
+                robust = pLo >= 1.5*c and pHi >= 1.5*c
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=ba,
-                    p=round(p,3), mid=round(mid,3), ev=round(p*(1/ba-1)-(1-p),2), conf=conf,
-                    stake=kelly_stake(p, min(pLo, pHi), ba)))
+                (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=round(c,3),
+                    p=round(p,3), mid=round(mid,3), ev=round(p*(1/c-1)-(1-p),2), conf=conf,
+                    stake=kelly_stake(p, min(pLo, pHi), c)))
             if bb is not None and mid >= 0.25 and (mid-p) >= 0.15:
-                noask = 1-bb
+                c = allin(1-bb)
                 robust = (mid-pLo >= 0.10) and (mid-pHi >= 0.10)
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(noask,3),
-                    p=round(p,3), mid=round(mid,3), ev=round((1-p)*(1/noask-1)-p,2), conf=conf,
-                    stake=kelly_stake(1-p, 1-max(pLo, pHi), noask)))
+                (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(c,3),
+                    p=round(p,3), mid=round(mid,3), ev=round((1-p)*(1/c-1)-p,2), conf=conf,
+                    stake=kelly_stake(1-p, 1-max(pLo, pHi), c)))
         out.append(dict(title=full["title"], n_obs=n_obs, borderline=borderline, t_rem_days=round(t_rem,1),
                         lam_rem=round(lam,2), vol=int(vol), picks=picks, watch=watch[:4],
-                        combos=chance_combos(qrows)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask,
+                        combos=chance_combos(qrows)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask, sum_allin=q_sum_allin,
                         link=f"https://polymarket.com/event/{slug}"))
     return out
 
@@ -241,24 +248,26 @@ def crypto_scan():
                 if pa is None or pb is None: continue
                 lo, hi = min(pa, pb), max(pa, pb)
                 row = dict(strike=int(K), p=round(p,3), mid=round(mid,3))
-                if 0.02 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                    conf = max(1, min(5, 3 + (1 if lo >= 1.5*ba else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=ba,
-                        ev=round(p*(1/ba-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, ba)))
+                if 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
+                    c = allin(ba)
+                    conf = max(1, min(5, 3 + (1 if lo >= 1.5*c else 0) - volpen))
+                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
+                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
                 if mid >= 0.25 and (mid-p) >= 0.15:
-                    noask = 1-bb
+                    c = allin(1-bb)
                     conf = max(1, min(5, 3 + (1 if (mid-hi) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(noask,3),
-                        ev=round((1-p)*(1/noask-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, noask)))
+                    (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(c,3),
+                        ev=round((1-p)*(1/c-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, c)))
                 if ba > 0.25 and (p-mid) >= 0.15:
+                    c = allin(ba)
                     conf = max(1, min(5, 3 + (1 if (lo-mid) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=ba,
-                        ev=round(p*(1/ba-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, ba)))
+                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
+                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
             # арбитраж на монотонности страйков: YES K1 + NO K2 (K1<K2) платит >= $1 всегда
             arbs = []
             for (k1, b1, a1), (k2, b2, a2) in zip(sorted(klist), sorted(klist)[1:]):
-                c = a1 + (1 - b2)
-                if c < 0.995:
+                c = allin(a1) + allin(1 - b2)   # полные цены обеих ног
+                if c < 0.99:
                     arbs.append(dict(k1=int(k1), k2=int(k2), cost=round(c, 3), profit=round(1-c, 3)))
             if picks or watch or arbs:
                 out.append(dict(title=ev["title"], date=d.strftime("%Y-%m-%d"), vol=int(vol),
