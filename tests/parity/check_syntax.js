@@ -16,9 +16,9 @@ if (!files.length){
 let bad = 0;
 for (const f of files){
   const src = fs.readFileSync(path.join(WEB, f), "utf8");
-  const blocks = src.match(/<script>[\s\S]*?<\/script>/g) || [];
+  const blocks = src.match(/<script[^>]*>[\s\S]*?<\/script\s*>/gi) || [];
   for (const b of blocks){
-    const code = b.replace(/^<script>/, "").replace(/<\/script>$/, "");
+    const code = b.replace(/^<script[^>]*>/i, "").replace(/<\/script\s*>$/i, "");
     try {
       new Function(code);
     } catch (e){
