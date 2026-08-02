@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Погодный скринер · Polymarket · v4.8</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --ink-1: #0b0b0b; --ink-2: #52514e; --ink-3: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --ring: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834;
+    --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+    --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --ring: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926;
+      --good-text: #0ca30c;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page); color: var(--ink-1);
+    padding: 20px 14px 60px; max-width: 780px; margin: 0 auto;
+    line-height: 1.45;
+  }
+  h1 { font-size: 21px; letter-spacing: -0.2px; }
+  .sub { color: var(--ink-2); font-size: 13.5px; margin: 4px 0 18px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--ring);
+    border-radius: 12px; padding: 16px; margin-bottom: 14px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .lbl { font-size: 12px; color: var(--ink-2); width: 100%; margin-bottom: -4px; }
+  .datechip {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    border: 1.5px solid var(--baseline); border-radius: 9px; padding: 8px 13px;
+    font-size: 13.5px; user-select: none;
+  }
+  .datechip input { accent-color: var(--s1); margin: 0; }
+  .datechip.on { border-color: var(--s1); background: color-mix(in srgb, var(--s1) 9%, var(--surface-1)); }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--ink-2); }
+  .field input { font: inherit; padding: 8px 10px; border: 1px solid var(--baseline); border-radius: 8px; background: var(--surface-1); color: var(--ink-1); width: 92px; }
+  #scanBtn {
+    font: inherit; font-weight: 600; padding: 11px 22px; border: none; cursor: pointer;
+    border-radius: 9px; background: var(--s1); color: #fff; font-size: 15px;
+  }
+  #scanBtn:disabled { opacity: 0.55; cursor: wait; }
+  #progress { font-size: 13px; color: var(--ink-2); margin-top: 10px; min-height: 18px; }
+  .cities-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 4px 10px; margin-top: 10px; }
+  .citychk { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; padding: 3px 0; }
+  .citychk input { accent-color: var(--s1); margin: 0; }
+  .tier { font-size: 10.5px; border: 1px solid var(--ring); border-radius: 4px; padding: 0 4px; color: var(--ink-3); }
+  .tier.tA { border-color: var(--good); color: var(--good-text); }
+  .tier.tC { border-color: var(--serious); color: var(--serious); }
+  .minibtn { font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid var(--baseline); background: var(--surface-1); color: var(--ink-2); border-radius: 7px; cursor: pointer; }
+  .summary { font-size: 14.5px; margin: 6px 0 12px; }
+  .pick { border-left: 3px solid var(--s1); }
+  .pick-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .pick-city { font-weight: 700; font-size: 16px; }
+  .datebadge { font-size: 12px; font-weight: 600; color: var(--s1); border: 1px solid var(--s1); border-radius: 6px; padding: 1px 8px; vertical-align: 2px; margin-left: 8px; }
+  .conf { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+  .conf b { color: var(--good-text); }
+  .action { font-size: 15.5px; font-weight: 650; margin: 8px 0 2px; }
+  .action .side-yes { color: var(--good-text); }
+  .action .side-no { color: var(--crit); }
+  .why { font-size: 13.5px; color: var(--ink-2); margin-bottom: 10px; }
+  .bars { margin: 10px 0 4px; }
+  .bar-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .bar-label { font-size: 12.5px; color: var(--ink-2); text-align: right; }
+  .bar-pair { display: flex; flex-direction: column; gap: 2px; }
+  .bar-track { display: flex; align-items: center; gap: 6px; height: 13px; }
+  .bar-fill { height: 12px; border-radius: 0 4px 4px 0; min-width: 2px; flex: none; }
+  .bar-fill.model { background: var(--s1); }
+  .bar-fill.market { background: var(--s2); }
+  .bar-val { font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin: 6px 0 2px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .legend .l-model::before { background: var(--s1); }
+  .legend .l-market::before { background: var(--s2); }
+  .meta { font-size: 12.5px; color: var(--ink-3); margin-top: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--ring); color: var(--ink-2); }
+  .chip.w { border-color: var(--warn); }
+  .chip.s { border-color: var(--serious); }
+  .mlink { font-size: 13px; color: var(--s1); text-decoration: none; font-weight: 600; }
+  .mlink:hover { text-decoration: underline; }
+  .payout { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
+  .payout th { text-align: left; color: var(--ink-3); font-weight: 500; border-bottom: 1px solid var(--grid); padding: 3px 6px; }
+  .payout td { padding: 4px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .pos { color: var(--good-text); font-weight: 600; }
+  .neg { color: var(--crit); }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-size: 14px; color: var(--ink-2); font-weight: 600; }
+  .watch-item, .skip-item { font-size: 13px; color: var(--ink-2); padding: 7px 0; border-bottom: 1px solid var(--grid); }
+  .rules { font-size: 12.5px; color: var(--ink-3); margin-top: 22px; }
+  .rules p { margin-bottom: 6px; }
+  .empty { text-align: center; padding: 26px 10px; color: var(--ink-2); font-size: 15px; }
+  .limit-warn { font-size: 13px; color: var(--ink-1); background: color-mix(in srgb, var(--warn) 18%, var(--surface-1)); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+  .err { color: var(--crit); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Погодный скринер · Polymarket <span style="font-size:13px;color:var(--ink-3)">v4.8 · 48 городов · вердикт, лоты, банкролл $100</span></h1>
+<div class="sub">Суперансамбль 143 члена (ECMWF 51 + GFS 31 + ICON 40 + GEM 21) на станции резолюции → поправка станции → вероятности бакетов → сравнение с ценами. Горизонт до послезавтра — дальше прогноз слишком размывается. Показываются только сетапы с уверенностью ≥4/5. Калибровка: <span id="calDate">1 августа 2026</span>.</div>
+
+<div class="card">
+  <div class="row" style="margin-bottom:12px">
+    <span class="lbl">Даты (резолюция — по местному дню города, как на Polymarket)</span>
+    <span id="dateChips"></span>
+  </div>
+  <div class="row">
+    <div class="field"><label>Ставка на ногу, $</label><input type="number" id="stakeInput" value="3" min="1" step="1"></div>
+    <div class="field"><label>Дневной лимит, $</label><input type="number" id="limitInput" value="15" min="1" step="1"></div>
+    <div class="field"><label>Банкролл, $</label><input type="number" id="bankrollInput" value="100" min="5" step="1"></div>
+    <label class="datechip on" id="chipMax"><input type="radio" name="mode" id="modeMax" checked>максимум дня</label>
+    <label class="datechip" id="chipMin" title="Рынки Lowest temperature — 8 городов с отдельной калибровкой ночных минимумов"><input type="radio" name="mode" id="modeMin">минимум ночи</label>
+    <label class="datechip" id="chipStrict" title="Только 5/5 и высокий EV — включай, когда наберётся статистика 30+ ставок"><input type="checkbox" id="strictMode">строгий отбор</label>
+    <button id="scanBtn">Сканировать рынки</button>
+  </div>
+  <details>
+    <summary>Города (<span id="cityCount"></span> выбрано) · калибровка: A — надёжная, B — средняя, C — не доверять</summary>
+    <div class="row" style="margin-top:8px">
+      <button class="minibtn" id="selReliable">только A+B</button>
+      <button class="minibtn" id="selAll">все</button>
+      <button class="minibtn" id="selNone">никакие</button>
+    </div>
+    <div class="cities-grid" id="cityGrid"></div>
+  </details>
+  <details>
+    <summary>Обновить калибровку (вставь JSON из отчёта Claude)</summary>
+    <textarea id="calibInput" placeholder='{"cal_date":"2026-08-08","cities":{"london":{"bias":0.1,"n":9,"std":0.8,"tier":"A"},...}}'
+      style="width:100%;min-height:70px;margin-top:8px;font:12px monospace;padding:8px;border:1px solid var(--baseline);border-radius:8px;background:var(--surface-1);color:var(--ink-1)"></textarea>
+    <div class="row" style="margin-top:6px">
+      <button class="minibtn" id="calibApply">Применить</button>
+      <span id="calibStatus" style="font-size:12px;color:var(--ink-2)"></span>
+    </div>
+  </details>
+  <div id="progress"></div>
+</div>
+
+<div id="results"></div>
+
+<div class="rules">
+  <p><b>Правила:</b> не превышать дневной лимит · нет сетапов ≥4/5 — не торгуем (пропуск дня — нормальный результат) · перед входом проверить стакан: нет объёма по нужной цене — уменьшить размер или пропустить · записывать каждый результат.</p>
+  <p><b>Калибровка станций</b> — METAR против архива прогнозов ECMWF, окно 7–10 дней. Тир A — разброс поправки ≤0.8°C; B — ≤1.5°C; C — поправка нестабильна, город исключается из рекомендаций даже если выбран. «Сегодня» для города пропускается после 12:00 местного — дальше рынок видит живые показания станции, и преимущество переходит к нему. Свежую калибровку присылает ежедневный отчёт Claude — вставь JSON в блок «Обновить калибровку» выше.</p>
+  <p>Это инструмент анализа, а не гарантия прибыли и не финансовый совет. Рынки адаптируются: если модельные оценки совпадают с ценами несколько дней подряд — edge исчез, торговлю остановить.</p>
+</div>
+
+<script>
+"use strict";
+/* ============ станции: bias/std/tier калиброваны 2026-08-01 (METAR vs модель) ============ */
+const CITIES = [
+  // калибровка 2026-08-01 (вечер): METAR против архива прогнозов ECMWF, окно 7–11 дней
+  { slug:"london",       name:"Лондон",       lat:51.5053, lon:  0.0553, unit:"C", bias:-0.06, n:9,  std:0.85, tier:"B" },
+  { slug:"paris",        name:"Париж",        lat:48.9694, lon:  2.4414, unit:"C", bias: 1.02, n:9,  std:0.48, tier:"A" },
+  { slug:"milan",        name:"Милан",        lat:45.6306, lon:  8.7281, unit:"C", bias: 0.44, n:9,  std:1.37, tier:"B" },
+  { slug:"munich",       name:"Мюнхен",       lat:48.3538, lon: 11.7861, unit:"C", bias: 2.52, n:9,  std:0.45, tier:"A" },
+  { slug:"madrid",       name:"Мадрид",       lat:40.4719, lon: -3.5626, unit:"C", bias: 0.48, n:9,  std:0.38, tier:"A" },
+  { slug:"warsaw",       name:"Варшава",      lat:52.1657, lon: 20.9671, unit:"C", bias:-0.26, n:9,  std:0.83, tier:"B" },
+  { slug:"amsterdam",    name:"Амстердам",    lat:52.3105, lon:  4.7683, unit:"C", bias: 1.32, n:9,  std:0.19, tier:"A" },
+  { slug:"nyc",          name:"Нью-Йорк",     lat:40.7769, lon:-73.8740, unit:"F", bias:-0.62, n:10, std:1.06, tier:"B" },
+  { slug:"chicago",      name:"Чикаго",       lat:41.9786, lon:-87.9048, unit:"F", bias: 0.04, n:10, std:1.15, tier:"B" },
+  { slug:"dallas",       name:"Даллас",       lat:32.8471, lon:-96.8518, unit:"F", bias:-0.12, n:10, std:1.14, tier:"B" },
+  { slug:"miami",        name:"Майами",       lat:25.7959, lon:-80.2870, unit:"F", bias: 1.39, n:10, std:1.15, tier:"B" },
+  { slug:"atlanta",      name:"Атланта",      lat:33.6407, lon:-84.4277, unit:"F", bias: 0.58, n:10, std:1.14, tier:"B" },
+  { slug:"seattle",      name:"Сиэтл",        lat:47.4502, lon:-122.3088,unit:"F", bias: 0.58, n:10, std:0.66, tier:"A" },
+  { slug:"toronto",      name:"Торонто",      lat:43.6777, lon:-79.6248, unit:"C", bias: 0.18, n:10, std:0.85, tier:"B" },
+  { slug:"seoul",        name:"Сеул",         lat:37.4602, lon:126.4407, unit:"C", bias: 1.68, n:8,  std:1.44, tier:"B" },
+  { slug:"tokyo",        name:"Токио",        lat:35.5494, lon:139.7798, unit:"C", bias:-1.98, n:8,  std:2.14, tier:"C" },
+  { slug:"shanghai",     name:"Шанхай",       lat:31.1443, lon:121.8083, unit:"C", bias:-0.81, n:8,  std:2.10, tier:"C" },
+  { slug:"singapore",    name:"Сингапур",     lat: 1.3644, lon:103.9915, unit:"C", bias: 1.43, n:7,  std:0.56, tier:"A" },
+  { slug:"hong-kong",    name:"Гонконг",      lat:22.3020, lon:114.1741, unit:"C", bias: 0.00, n:0,  std:null, tier:"C" },
+  { slug:"wellington",   name:"Веллингтон",   lat:-41.3272,lon:174.8053, unit:"C", bias: 1.03, n:7,  std:0.77, tier:"A" },
+  { slug:"sao-paulo",    name:"Сан-Паулу",    lat:-23.4356,lon:-46.4731, unit:"C", bias: 0.17, n:10, std:1.73, tier:"C" },
+  { slug:"buenos-aires", name:"Буэнос-Айрес", lat:-34.8222,lon:-58.5358, unit:"C", bias: 1.15, n:10, std:1.18, tier:"B" },
+  { slug:"mexico-city",  name:"Мехико",       lat:19.4363, lon:-99.0721, unit:"C", bias:-0.77, n:10, std:1.46, tier:"B" },
+  // новые города (добавлены 2026-08-01)
+  { slug:"chongqing",    name:"Чунцин",       lat:29.7190, lon:106.6420, unit:"C", bias: 2.60, n:10, std:0.72, tier:"A" },
+  { slug:"chengdu",      name:"Чэнду",        lat:30.5780, lon:103.9470, unit:"C", bias: 0.25, n:10, std:1.27, tier:"B" },
+  { slug:"kuala-lumpur", name:"Куала-Лумпур", lat: 2.7460, lon:101.7100, unit:"C", bias: 0.40, n:8,  std:1.26, tier:"B" },
+  { slug:"los-angeles",  name:"Лос-Анджелес", lat:33.9425, lon:-118.408, unit:"F", bias:-6.55, n:10, std:1.14, tier:"C" },
+  { slug:"tel-aviv",     name:"Тель-Авив",    lat:32.0110, lon: 34.8860, unit:"C", bias:-2.54, n:9,  std:0.60, tier:"A" },
+  { slug:"beijing",      name:"Пекин",        lat:40.0800, lon:116.5850, unit:"C", bias: 0.41, n:8,  std:1.87, tier:"C" },
+  { slug:"taipei",       name:"Тайбэй",       lat:25.0690, lon:121.5520, unit:"C", bias: 1.98, n:8,  std:0.96, tier:"B" },
+  { slug:"helsinki",     name:"Хельсинки",    lat:60.3170, lon: 24.9630, unit:"C", bias: 1.60, n:9,  std:0.92, tier:"B" },
+  { slug:"lucknow",      name:"Лакхнау",      lat:26.7610, lon: 80.8890, unit:"C", bias: 0.80, n:8,  std:1.13, tier:"B" },
+  { slug:"jeddah",       name:"Джидда",       lat:21.6800, lon: 39.1570, unit:"C", bias:-2.15, n:11, std:1.21, tier:"B" },
+  { slug:"karachi",      name:"Карачи",       lat:24.9070, lon: 67.1610, unit:"C", bias:-1.33, n:8,  std:0.52, tier:"A" },
+  { slug:"houston",      name:"Хьюстон",      lat:29.6460, lon:-95.2790, unit:"F", bias: 0.34, n:10, std:0.54, tier:"A" },
+  { slug:"ankara",       name:"Анкара",       lat:40.1280, lon: 32.9950, unit:"C", bias: 0.49, n:9,  std:1.15, tier:"B" },
+  { slug:"wuhan",        name:"Ухань",        lat:30.7840, lon:114.2080, unit:"C", bias: 1.65, n:10, std:0.67, tier:"A" },
+  { slug:"guangzhou",    name:"Гуанчжоу",     lat:23.3920, lon:113.2990, unit:"C", bias: 2.21, n:7,  std:0.94, tier:"B" },
+  { slug:"denver",       name:"Денвер",       lat:39.7020, lon:-104.752, unit:"F", bias: 1.10, n:10, std:0.68, tier:"A" },
+  { slug:"istanbul",     name:"Стамбул",      lat:41.2760, lon: 28.7520, unit:"C", bias: 0.00, n:9,  std:0.48, tier:"A" },
+  { slug:"qingdao",      name:"Циндао",       lat:36.3620, lon:120.0880, unit:"C", bias: 0.32, n:10, std:0.88, tier:"B" },
+  { slug:"cape-town",    name:"Кейптаун",     lat:-33.9650,lon: 18.6020, unit:"C", bias: 0.82, n:11, std:0.54, tier:"A" },
+  { slug:"manila",       name:"Манила",       lat:14.5090, lon:121.0200, unit:"C", bias: 1.31, n:10, std:0.71, tier:"A" },
+  // новые города (добавлены 2026-08-02, калибровка живая)
+  { slug:"austin",       name:"Остин",        lat:30.1975, lon:-97.6664, unit:"F", bias: 0.27, n:10, std:0.80, tier:"B" },
+  { slug:"busan",        name:"Пусан",        lat:35.1795, lon:128.9382, unit:"C", bias:-1.47, n:10, std:1.10, tier:"B" },
+  { slug:"shenzhen",     name:"Шэньчжэнь",    lat:22.6393, lon:113.8107, unit:"C", bias: 0.86, n:10, std:1.14, tier:"B" },
+  { slug:"san-francisco",name:"Сан-Франциско",lat:37.6213, lon:-122.3790,unit:"F", bias: 1.94, n:10, std:0.73, tier:"A" },
+  { slug:"moscow",       name:"Москва",       lat:55.5915, lon: 37.2615, unit:"C", bias:-0.05, n:8,  std:1.57, tier:"C" }, // Внуково; объём рынка пока мал
+];
+/* ночные минимумы: отдельная калибровка (2026-08-01), рынки Lowest temperature есть у 8 городов */
+const MIN_CAL = {
+  "hong-kong": { bias: 0.00, n: 0,  std: null, tier: "C" },
+  "london":    { bias: 1.01, n: 8,  std: 1.83, tier: "C" },
+  "miami":     { bias: 0.38, n: 10, std: 0.55, tier: "A" },
+  "nyc":       { bias: 1.21, n: 10, std: 0.69, tier: "A" },
+  "paris":     { bias: 0.38, n: 8,  std: 2.45, tier: "C" },
+  "seoul":     { bias: 0.88, n: 8,  std: 0.73, tier: "A" },
+  "shanghai":  { bias:-0.45, n: 8,  std: 0.64, tier: "A" },
+  "tokyo":     { bias: 0.49, n: 8,  std: 1.00, tier: "B" },
+};
+let MODE = "max"; // max | min
+const calOf = c => MODE === "min" ? MIN_CAL[c.slug] : c;
+const FAMS = [["ec","ECMWF"],["gf","GFS"],["ic","ICON"],["gm","GEM"]];
+const MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+const RU_D = ["вс","пн","вт","ср","чт","пт","сб"];
+const RU_M = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+const LEAD_NAMES = ["сегодня","завтра","послезавтра"];
+const sigmaFor = lead => 0.6 + 0.15*lead;   // погрешность растёт с горизонтом
+
+/* ============ математика ============ */
+function erf(x){
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1/(1+0.3275911*x);
+  const poly = ((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t;
+  return s*(1-poly*Math.exp(-x*x));
+}
+const phi = x => 0.5*(1+erf(x/Math.SQRT2));
+const f2c = f => (f-32)*5/9;
+
+function bucketProb(members, lo, hi, unit, bias, sigma){
+  let loC = lo, hiC = hi;
+  if (unit === "F"){ loC = lo>-900 ? f2c(lo) : -999; hiC = hi<900 ? f2c(hi) : 999; }
+  let tot = 0;
+  for (const x of members){
+    const xc = x + bias;
+    tot += (hiC>900 ? 1 : phi((hiC-xc)/sigma)) - (loC<-900 ? 0 : phi((loC-xc)/sigma));
+  }
+  return tot/members.length;
+}
+
+function parseBucket(t){
+  t = (t||"").trim();
+  let m = t.match(/^(-?\d+)°[CF] or below$/);      if (m) return [-999, +m[1]+0.5];
+  m = t.match(/^(-?\d+)°[CF] or (higher|above)$/); if (m) return [+m[1]-0.5, 999];
+  m = t.match(/^(-?\d+)°[CF]$/);                   if (m) return [+m[1]-0.5, +m[1]+0.5];
+  m = t.match(/^(-?\d+)-(-?\d+)°[CF]$/);           if (m) return [+m[1]-0.5, +m[2]+0.5];
+  return null;
+}
+
+/* ============ загрузка ============ */
+async function fetchJSON(url, tries = 3){
+  for (let i = 0; i < tries; i++){
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 45000);
+      const r = await fetch(url, { signal: ctl.signal });
+      clearTimeout(timer);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } catch(e){ if (i === tries-1) throw e; await new Promise(res => setTimeout(res, 1200*(i+1))); }
+  }
+}
+
+function slugFor(city, dateStr){
+  const d = new Date(dateStr + "T12:00:00");
+  return `${MODE === "min" ? "lowest" : "highest"}-temperature-in-${city.slug}-on-${MONTHS[d.getMonth()]}-${d.getDate()}-${d.getFullYear()}`;
+}
+const fmtDateRu = ds => { const d = new Date(ds + "T12:00:00"); return `${RU_D[d.getDay()]} ${d.getDate()} ${RU_M[d.getMonth()]}`; };
+
+/* один запрос ансамбля на город на весь горизонт */
+const famOf = k => k.includes("ecmwf") ? "ec" : k.includes("icon") ? "ic" : k.includes("gem") ? "gm" : "gf";
+
+async function fetchCityEnsemble(city, startDate, endDate){
+  const ens = await fetchJSON("https://ensemble-api.open-meteo.com/v1/ensemble?" + new URLSearchParams({
+    latitude: city.lat, longitude: city.lon, hourly: "temperature_2m",
+    models: "ecmwf_ifs025,gfs025,icon_seamless,gem_global", timezone: "auto",
+    start_date: startDate, end_date: endDate,
+  }));
+  const times = ens.hourly.time;
+  const keys = Object.keys(ens.hourly).filter(k => k.startsWith("temperature_2m"));
+  const byDate = {}; // date -> {all:[], ec:[], gf:[], ic:[], gm:[]}
+  for (const k of keys){
+    const vals = ens.hourly[k];
+    const perDay = {};
+    for (let i = 0; i < times.length; i++){
+      const v = vals[i]; if (v == null) continue;
+      const d = times[i].slice(0,10);
+      if (perDay[d] == null || (MODE === "min" ? v < perDay[d] : v > perDay[d])) perDay[d] = v;
+    }
+    const fam = famOf(k);
+    for (const d in perDay){
+      if (!byDate[d]) byDate[d] = { all: [], ec: [], gf: [], ic: [], gm: [] };
+      byDate[d].all.push(perDay[d]);
+      byDate[d][fam].push(perDay[d]);
+    }
+  }
+  return { byDate, utcOffset: ens.utc_offset_seconds || 0 };
+}
+
+async function screenCityDate(city, dateStr, lead, ensData){
+  const cal = calOf(city);
+  if (!cal) return { city, dateStr, lead, skip: "для этого города нет калибровки минимумов" };
+  // «сегодня»: если экстремум дня уже сформирован — пропуск (минимум — на рассвете, максимум — днём)
+  if (lead === 0){
+    const localHour = new Date(Date.now() + ensData.utcOffset*1000).getUTCHours();
+    const cutoff = MODE === "min" ? 6 : 12;
+    if (localHour >= cutoff) return { city, dateStr, lead, skip: MODE === "min"
+      ? "минимум дня формируется на рассвете — после 06:00 местного преимущество у рынка"
+      : "после 12:00 местного рынок видит живые показания станции — преимущество не у нас" };
+  }
+  const evArr = await fetchJSON("https://gamma-api.polymarket.com/events?slug=" + slugFor(city, dateStr));
+  const ev = evArr && evArr[0];
+  if (!ev) return { city, dateStr, lead, skip: "рынок ещё не открыт" };
+  if (ev.closed) return { city, dateStr, lead, skip: "рынок закрыт" };
+  // индекс неэффективности книги: сумма ask по всем бакетам (у честного рынка ≈ $1.02-1.10)
+  const allAsks = ev.markets.filter(m => parseBucket(m.groupItemTitle)).map(m => m.bestAsk);
+  const sumAsk = (allAsks.length >= 5 && allAsks.every(a => a != null))
+    ? +allAsks.reduce((s,a) => s+a, 0).toFixed(3) : null;
+  const day = ensData.byDate[dateStr];
+  if (!day || day.all.length < 20) return { city, dateStr, lead, skip: "мало данных ансамбля" };
+
+  const sigma = sigmaFor(lead);
+  const db = Math.max(0.5, cal.std ?? 0.5);   // окно перепроверки = реальный разброс поправки
+  const buckets = [];
+  for (const m of ev.markets){
+    const rng = parseBucket(m.groupItemTitle);
+    if (!rng) continue;
+    let prices = m.outcomePrices;
+    if (typeof prices === "string"){ try { prices = JSON.parse(prices); } catch(e){ prices = null; } }
+    const bb = m.bestBid ?? null, ba = m.bestAsk ?? null;
+    const mid = (bb != null && ba != null) ? (bb+ba)/2 : (prices ? +prices[0] : null);
+    if (mid == null) continue;
+    const fams = {};
+    for (const [f] of FAMS)
+      if (day[f].length >= 15) fams[f] = bucketProb(day[f], rng[0], rng[1], city.unit, cal.bias, sigma);
+    let tid = null;
+    try { const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds; tid = (t && t[0]) || null; } catch(e){}
+    buckets.push({
+      title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid,
+      p:   bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias, sigma),
+      pLo: bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias - db, sigma),
+      pHi: bucketProb(day.all, rng[0], rng[1], city.unit, cal.bias + db, sigma),
+      fams,
+    });
+  }
+  return { city, dateStr, lead, volume: +ev.volume || 0, buckets, db, sumAsk, cal, mode: MODE,
+           link: "https://polymarket.com/event/" + slugFor(city, dateStr) };
+}
+
+/* ============ глубина стакана (CLOB) ============ */
+async function fetchDepth(b, side){
+  if (!b.tid) return null;
+  try {
+    const book = await fetchJSON("https://clob.polymarket.com/book?token_id=" + b.tid, 2);
+    let usd = 0;
+    if (side === "YES"){
+      const lim = (b.ask ?? 0) + 0.006;                 // покупка YES: асках не дороже цены+0.6¢
+      for (const a of (book.asks || [])){ const p = +a.price; if (p <= lim) usd += p * (+a.size); }
+    } else {
+      const lim = (b.bid ?? 1) - 0.006;                 // покупка NO = продажа YES в бид: биды не ниже цены−0.6¢
+      for (const d of (book.bids || [])){ const p = +d.price; if (p >= lim) usd += (1-p) * (+d.size); }
+    }
+    return usd;
+  } catch(e){ return null; }
+}
+
+/* ============ отбор сделок ============ */
+function findTrades(r){
+  const out = [];
+  if (r.skip || r.volume < 10000) return out;
+  const volPen = r.volume < 30000 ? 1 : 0;
+  const c = r.cal;
+  for (const b of r.buckets){
+    const { ask, bid, mid, p } = b;
+    const famVals = Object.values(b.fams);
+    if (ask != null && ask >= 0.02 && ask <= 0.25 && p >= 2*ask && p >= 0.08){
+      const robust = b.pLo >= 1.5*ask && b.pHi >= 1.5*ask;
+      const mn = famVals.length ? Math.min(...famVals) : p;
+      const agreeBonus = mn >= 0.5*p ? 1 : (mn < 0.25*p ? -1 : 0);
+      const spread = bid != null ? ask-bid : ask;
+      let conf = 3 + (robust?1:0) + agreeBonus - (spread>0.08?1:0) - (c.n<3?1:0) - volPen - (r.lead>=2?1:0);
+      if (c.tier === "C") conf = Math.min(conf, 2);
+      out.push({ side:"YES", r, b, cost: ask, ev: p*(1/ask-1)-(1-p),
+                 conf: Math.max(1, Math.min(5, conf)), robust, split: mn < 0.5*p, thin: volPen>0 });
+    }
+    if (bid != null && mid >= 0.25 && (mid-p) >= 0.15){
+      const noAsk = 1-bid;
+      const robust = (mid-b.pHi >= 0.10) && (mid-b.pLo >= 0.10);
+      const agree = famVals.every(pf => mid-pf >= 0.10);
+      const refute = famVals.some(pf => pf >= mid);
+      const agreeBonus = agree ? 1 : (refute ? -1 : 0);
+      let conf = 3 + (robust?1:0) + agreeBonus - (c.n<3?1:0) - volPen - (r.lead>=2?1:0);
+      if (c.tier === "C") conf = Math.min(conf, 2);
+      out.push({ side:"NO", r, b, cost: noAsk, ev: (1-p)*(1/noAsk-1)-p,
+                 conf: Math.max(1, Math.min(5, conf)), robust, split: refute, thin: volPen>0 });
+    }
+  }
+  return out;
+}
+
+/* ============ рекомендуемый размер ставки: четверть Келли ============ */
+function kellyStake(pBase, pCons, cost, bankroll, cap, depth){
+  // осторожная вероятность = среднее базовой и стрессовой: чем шире разброс, тем меньше ставка
+  if (!(cost > 0 && cost < 1) || pBase == null) return 0;
+  const pUse = pCons == null ? pBase : 0.5*(pBase + pCons);
+  const b = (1-cost)/cost;
+  const f = pUse - (1-pUse)/b;            // доля Келли
+  if (f <= 0) return 0;                    // преимущества нет — не ставим
+  let st = bankroll*f*0.25;
+  if (depth) st = Math.min(st, depth);
+  st = Math.min(st, cap);
+  return st < 0.5 ? 0 : Math.max(st, 1);
+}
+
+/* ============ шанс-комбо: вероятность выше — прибыль меньше ============ */
+function chanceCombos(r){
+  // Равные доли в 2–4 бакетах одного рынка: платим sum(ask) за $1 выплаты,
+  // выигрыш — если исход попал в ЛЮБОЙ бакет набора. Жадный набор по ценности p/ask.
+  if (r.skip || (r.volume || 0) < 10000) return [];
+  const cand = r.buckets
+    .filter(b => b.ask != null && b.ask >= 0.001 && b.ask <= 0.9 && b.p >= 0.03)
+    .sort((a,z) => z.p/z.ask - a.p/a.ask);
+  const steps = []; const S = []; let cost = 0, P = 0, Plo = 0, Phi = 0;
+  for (const b of cand){
+    if (S.length >= 4) break;
+    if (cost + b.ask > 0.90) continue;
+    if ((P + b.p)/(cost + b.ask) - 1 < 0.15) break;
+    S.push(b); cost += b.ask; P += b.p; Plo += b.pLo; Phi += b.pHi;
+    if (S.length >= 2 && P >= 0.40)
+      steps.push({ r, buckets: [...S].sort((a,z) => a.lo - z.lo), cost, pWin: P,
+                   pLo: Math.min(Plo, Phi), pHi: Math.max(Plo, Phi) });
+  }
+  return steps;
+}
+
+/* ============ UI ============ */
+const $ = id => document.getElementById(id);
+const fmtP = x => (100*x).toFixed(x < 0.095 ? 1 : 0) + "%";
+const fmtC = x => (100*x).toFixed(1) + "¢";
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+const money = x => (x >= 0 ? "+" : "−") + "$" + Math.abs(x).toFixed(2);
+
+function isoPlus(days){ const d = new Date(); d.setDate(d.getDate()+days);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+
+function barRow(label, pModel, pMarket){
+  const w1 = (0.82*Math.min(100, 100*pModel)).toFixed(1), w2 = (0.82*Math.min(100, 100*pMarket)).toFixed(1);
+  return `<div class="bar-row"><div class="bar-label">${esc(label)}</div><div class="bar-pair">
+    <div class="bar-track"><div class="bar-fill model" style="width:${w1}%"></div><span class="bar-val">${fmtP(pModel)}</span></div>
+    <div class="bar-track"><div class="bar-fill market" style="width:${w2}%"></div><span class="bar-val">${fmtP(pMarket)}</span></div>
+  </div></div>`;
+}
+
+const famLine = b => FAMS.filter(([f]) => b.fams[f] != null).map(([f,name]) => `${name} ${fmtP(b.fams[f])}`).join(" / ");
+
+function legChips(t){
+  const chips = [];
+  if (t.r.lead === 0) chips.push(`<span class="chip s">⚠ рынок «сегодня» может учитывать живые показания — сверь текущую температуру станции перед входом</span>`);
+  if (t.thin)  chips.push(`<span class="chip w">⚠ тонкий рынок — проверь стакан</span>`);
+  if (t.split) chips.push(`<span class="chip s">⚠ модели расходятся (${famLine(t.b)})</span>`);
+  if (!t.robust) chips.push(`<span class="chip w">⚠ чувствительно к поправке станции</span>`);
+  return chips;
+}
+
+function cityCard(g, stake, rank){
+  const c = g.city, r = g.r;
+  const Y = g.yes, N = g.no;
+  const cost = (Y ? stake : 0) + (N ? stake : 0);
+  let action = "", why = "", payout = "", evTotal = 0, minConf = 5;
+  if (Y){ evTotal += Y.ev*stake; minConf = Math.min(minConf, Y.conf); }
+  if (N){ evTotal += N.ev*stake; minConf = Math.min(minConf, N.conf); }
+  if (Y && N){
+    action = `КОМБО: <span class="side-yes">YES «${esc(Y.b.title)}» до ${fmtC(Y.b.ask)}</span> + <span class="side-no">NO «${esc(N.b.title)}» до ${fmtC(N.cost)}</span>`;
+    why = `YES: модель ${fmtP(Y.b.p)} против рынка ${fmtP(Y.b.mid)} (${(Y.b.p/Y.b.mid).toFixed(1)}×). NO: рынок переоценивает «${esc(N.b.title)}» — ${fmtP(N.b.mid)} при модельных ${fmtP(N.b.p)}.`;
+    const yWin = stake*(1/Y.b.ask-1), nWin = stake*(1/N.cost-1);
+    const pY = Y.b.p, pN = N.b.p, pOther = Math.max(0, 1-pY-pN);
+    payout = `<table class="payout">
+      <tr><th>Исход ($${stake} на ногу)</th><th>Итог</th><th>Вероятность (модель)</th></tr>
+      <tr><td>Попал YES-бакет «${esc(Y.b.title)}»</td><td class="pos">${money(yWin+nWin)}</td><td>${fmtP(pY)}</td></tr>
+      <tr><td>Любая другая температура</td><td class="${nWin-stake >= 0 ? "pos" : "neg"}">${money(nWin-stake)}</td><td>${fmtP(pOther)}</td></tr>
+      <tr><td>Попал NO-бакет «${esc(N.b.title)}»</td><td class="neg">${money(-2*stake)}</td><td>${fmtP(pN)}</td></tr>
+    </table>`;
+  } else if (Y){
+    action = `<span class="side-yes">КУПИТЬ YES «${esc(Y.b.title)}» до ${fmtC(Y.b.ask)}</span>`;
+    why = `Модель даёт ${fmtP(Y.b.p)}, рынок оценивает в ${fmtP(Y.b.mid)} — перевес ${(Y.b.p/Y.b.mid).toFixed(1)}×. Если попадёт: +$${(stake*(1/Y.b.ask-1)).toFixed(2)} со ставки $${stake}. Хеджа NO ≥4/5 здесь нет — одиночная позиция, бинарный исход.`;
+  } else {
+    action = `<span class="side-no">КУПИТЬ NO «${esc(N.b.title)}» до ${fmtC(N.cost)}</span>`;
+    why = `Рынок оценивает бакет в ${fmtP(N.b.mid)}, модель — только в ${fmtP(N.b.p)}. NO выигрывает при любой другой температуре: +$${(stake*(1/N.cost-1)).toFixed(2)} со ставки $${stake}.`;
+  }
+  const ref = Y ? Y.b : N.b;
+  const top = [...r.buckets].sort((a,z) => z.p-a.p).slice(0,3)
+    .sort((a,z) => a.lo-z.lo).map(x => barRow(x.title, x.p, x.mid)).join("");
+  const chips = [...(Y ? legChips(Y) : []), ...(N ? legChips(N) : [])]
+    .filter((v,i,arr) => arr.indexOf(v) === i);
+  // глубина стакана: хватит ли объёма на наши ставки по нужной цене
+  const depthParts = [];
+  for (const [leg, label] of [[Y,"YES"],[N,"NO"]]){
+    if (!leg) continue;
+    if (leg.depth == null){ depthParts.push(`${label} н/д`); continue; }
+    depthParts.push(`${label} $${leg.depth.toFixed(0)}`);
+    if (leg.depth < 2*stake) chips.push(`<span class="chip s">⚠ тонкий стакан ${label}: по нужной цене доступно ~$${leg.depth.toFixed(2)} — уменьши размер или лимитный ордер</span>`);
+  }
+  const depthTxt = depthParts.length ? ` · глубина по цене входа: ${depthParts.join(" / ")}` : "";
+  const bkr = Math.max(5, +$("bankrollInput").value || 34), lim = Math.max(1, +$("limitInput").value || 6);
+  const stY = Y ? kellyStake(Y.b.p, Math.min(Y.b.pLo, Y.b.pHi), Y.b.ask, bkr, lim, Y.depth) : 0;
+  const stN = N ? kellyStake(1-N.b.p, 1-Math.max(N.b.pLo, N.b.pHi), N.cost, bkr, lim, N.depth) : 0;
+  const sizeLine = `<div class="why" style="margin-top:-4px"><b>Рекомендуемый размер</b> (четверть Келли от банкролла $${bkr}): ${[Y ? `YES ${stY ? "$"+stY.toFixed(2) : "не ставить"}` : null, N ? `NO ${stN ? "$"+stN.toFixed(2) : "не ставить"}` : null].filter(Boolean).join(" · ")} · исполнение: цена &lt;10¢ или тонкий стакан — лимит по аску, иначе можно маркетом</div>`;
+  const cal = r.cal;
+  const robustNote = `перепроверка: поправка ${cal.bias >= 0 ? "+" : ""}${cal.bias.toFixed(1)}±${r.db.toFixed(1)}°C → p(YES-цели) ${Y ? `${fmtP(Math.min(Y.b.pLo,Y.b.pHi))}–${fmtP(Math.max(Y.b.pLo,Y.b.pHi))}` : "—"}`;
+  return `<div class="card pick">
+    <div class="pick-head">
+      <span class="pick-city">${rank}. ${esc(c.name)}<span class="datebadge">${r.mode === "min" ? "МИНИМУМ · " : ""}${LEAD_NAMES[g.r.lead]}, ${fmtDateRu(r.dateStr)}</span></span>
+      <span class="conf"><b>✓ уверенность ${minConf}/5</b> · EV ${money(evTotal)} на $${cost}</span>
+    </div>
+    <div class="action">${action}</div>
+    <div class="why">${why}</div>
+    ${sizeLine}
+    <div class="legend"><span class="l-model">модель (наша оценка)</span><span class="l-market">рынок (цена)</span></div>
+    <div class="bars">${top}</div>
+    ${payout}
+    <div class="meta">${famLine(ref)} · калибровка ${r.mode === "min" ? "минимумов " : ""}${cal.tier} (n=${cal.n}) · ${robustNote} · спред ${ref.bid != null ? fmtC(ref.ask-ref.bid) : "—"} · объём $${Math.round(r.volume).toLocaleString("en-US")}${depthTxt}</div>
+    ${chips.length ? `<div class="chips">${chips.join("")}</div>` : ""}
+    <div style="margin-top:10px"><a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть рынок (резолюция — местный день города) →</a></div>
+  </div>`;
+}
+
+/* ============ сканирование ============ */
+async function scan(){
+  const btn = $("scanBtn"); btn.disabled = true;
+  const stake = Math.max(1, +$("stakeInput").value || 3);
+  const limit = Math.max(1, +$("limitInput").value || 6);
+  const bankroll = Math.max(5, +$("bankrollInput").value || 34);
+  const leads = [0,1,2].filter(l => $("lead"+l).checked);
+  const citiesSel = CITIES.filter(c => $("city_"+c.slug).checked);
+  const prog = $("progress"), res = $("results");
+  res.innerHTML = "";
+  if (!leads.length || !citiesSel.length){
+    prog.innerHTML = `<span class="err">Выбери хотя бы одну дату и один город.</span>`; btn.disabled = false; return;
+  }
+  const dates = leads.map(l => ({ lead: l, dateStr: isoPlus(l) }));
+  const total = citiesSel.length;
+  let done = 0;
+  prog.textContent = `Загружаю: 0/${total} городов…`;
+
+  const results = [];
+  const queue = [...citiesSel];
+  async function worker(){
+    while (queue.length){
+      const city = queue.shift();
+      try {
+        const ens = await fetchCityEnsemble(city, dates[0].dateStr, dates[dates.length-1].dateStr);
+        for (const d of dates){
+          try { results.push(await screenCityDate(city, d.dateStr, d.lead, ens)); }
+          catch(e){ results.push({ city, dateStr: d.dateStr, lead: d.lead, skip: "ошибка: " + e.message }); }
+        }
+      } catch(e){
+        for (const d of dates) results.push({ city, dateStr: d.dateStr, lead: d.lead, skip: "ошибка ансамбля: " + e.message });
+      }
+      done++; prog.textContent = `Загружаю: ${done}/${total} городов…`;
+    }
+  }
+  await Promise.all(Array.from({length: 6}, worker));
+
+  const trades = results.flatMap(findTrades);
+  const strict = $("strictMode").checked;
+  const good = trades.filter(t => strict
+    ? (t.conf === 5 && t.ev >= (t.side === "YES" ? 1.0 : 0.35))
+    : t.conf >= 4);
+  const byKey = new Map();
+  for (const t of good){
+    const k = t.r.city.slug + "|" + t.r.dateStr;
+    if (!byKey.has(k)) byKey.set(k, { city: t.r.city, r: t.r, yes: null, no: null });
+    const g = byKey.get(k);
+    if (t.side === "YES" && (!g.yes || t.ev > g.yes.ev)) g.yes = t;
+    if (t.side === "NO"  && (!g.no  || t.ev > g.no.ev))  g.no = t;
+  }
+  const groups = [...byKey.values()]
+    .map(g => ({ ...g, score: (g.yes ? g.yes.ev*g.yes.conf : 0) + (g.no ? g.no.ev*g.no.conf : 0) }))
+    .sort((a,z) => z.score - a.score);
+  const picks = groups.slice(0, 6);
+  const rest = groups.slice(6);
+  // автопроверка глубины стакана для ног топ-сетапов
+  prog.textContent = "Проверяю глубину стаканов…";
+  await Promise.all(picks.flatMap(g => [
+    g.yes ? fetchDepth(g.yes.b, "YES").then(d => { g.yes.depth = d; }) : null,
+    g.no  ? fetchDepth(g.no.b,  "NO").then(d => { g.no.depth = d; })  : null,
+  ].filter(Boolean)));
+  const watch = trades.filter(t => t.conf === 3);
+  const blocked = trades.filter(t => t.conf <= 2 && t.r.cal.tier === "C");
+  const skipped = results.filter(r => r.skip);
+
+  // арбитраж и неэффективность книг
+  const ineff = results.filter(r => !r.skip && r.sumAsk != null).sort((a,z) => a.sumAsk - z.sumAsk);
+  const pureArb = ineff.filter(r => r.sumAsk < 0.99);
+
+  // шанс-комбо: до 2 лучших шагов на город-дату, сортировка по вероятности выигрыша
+  const comboSeen = new Map(), combos = [];
+  for (const c of results.flatMap(chanceCombos).sort((a,z) => z.pWin - a.pWin || z.pWin/z.cost - a.pWin/a.cost)){
+    const k = c.r.city.slug + "|" + c.r.dateStr;
+    const n = comboSeen.get(k) || 0;
+    if (n >= 2) continue;
+    comboSeen.set(k, n + 1); combos.push(c);
+  }
+  // «серийная ставка дня»: строгие критерии повторяемости (P>=60%, EV>=+20%, тир A/B, узкий диапазон, объём)
+  const isSeries = c => c.pWin >= 0.60 && (c.pWin/c.cost - 1) >= 0.20 && (c.pHi - c.pLo) <= 0.25
+    && (c.r.cal.tier === "A" || c.r.cal.tier === "B") && (c.r.volume || 0) >= 15000;
+  const sBest = [...combos].filter(isSeries).sort((a,z) => z.pWin*(z.pWin/z.cost-1) - a.pWin*(a.pWin/a.cost-1))[0] || null;
+
+  let html = "";
+  for (const r of pureArb){
+    html += `<div class="limit-warn"><b>Чистый арбитраж: ${esc(r.city.name)} (${fmtDateRu(r.dateStr)})</b> — сумма цен всех бакетов ${fmtC(r.sumAsk)}: покупка YES на ВСЕ исходы даёт гарантированные +${fmtC(1-r.sumAsk)} с каждого $1-комплекта при любой погоде. Проверь глубину стакана на каждом бакете — тонкие книги. <a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть →</a></div>`;
+  }
+  // ВЕРДИКТ ДНЯ: арбитраж (баннеры выше) > серия > одиночная 5/5 > честный пропуск
+  const vTop = picks[0] || null;
+  const vConf = vTop ? Math.min(vTop.yes ? vTop.yes.conf : 5, vTop.no ? vTop.no.conf : 5) : 0;
+  const modeName = MODE === "min" ? "минимумы" : "максимумы";
+  if (sBest){
+    const st = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, limit) || 1;
+    const nSets = st/sBest.cost;
+    const vLegs = sBest.buckets.map(b => { const sh = Math.max(nSets, 1/b.ask); return `${esc(b.title)} ≤${fmtC(b.ask)} × ${sh.toFixed(1)} акц ($${(sh*b.ask).toFixed(2)})`; }).join(" · ");
+    const vUsd = sBest.buckets.reduce((s,b) => s + Math.max(nSets, 1/b.ask)*b.ask, 0);
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${st.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» — цель ${nSets.toFixed(1)} акц/нога, но минимум биржи $1 на ордер поднимает дешёвые ноги <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера: ${vLegs} — итого $${vUsd.toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · при попадании +$${(st*(1/sBest.cost-1)).toFixed(2)}, мимо −$${st.toFixed(2)} · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll} по осторожной вероятности. Покупать ЛИМИТ-ордерами: цена = текущий аск (потолок +1¢). Минимум биржи — $1 на ордер, поэтому в дешёвых бакетах акций больше (суммы по ногам выровнены до $1). Лимит по аску исполняется сразу, но защищает от проскальзывания.</div></div>`;
+  } else if (vConf >= 5){
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
+  } else {
+    html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Это нормальный результат: ставим только при подтверждённом перевесе.</div>`;
+  }
+  const planned = picks.reduce((s,g) => s + stake*((g.yes?1:0)+(g.no?1:0)), 0);
+  if (picks.length){
+    html += `<div class="summary"><b>${picks.length}</b> сетап(ов) с уверенностью ≥4/5 (${dates.map(d => LEAD_NAMES[d.lead]+" "+fmtDateRu(d.dateStr)).join(" · ")}). Лучшие — сверху.</div>`;
+    if (planned > limit) html += `<div class="limit-warn">Все сетапы разом ($${planned}) превысят дневной лимит $${limit} — возьми только верхние, пока укладываешься в лимит.</div>`;
+    html += picks.map((g,i) => cityCard(g, stake, i+1)).join("");
+  } else {
+    html += `<div class="card"><div class="empty">Сетапов с уверенностью ≥4/5 на выбранные даты нет.<br><b>По правилам — не торгуем.</b> Пропуск дня — нормальный результат.</div></div>`;
+  }
+  if (combos.length){
+    html += `<details open><summary>Шанс-комбо — выигрывать чаще, соглашаясь на меньшую прибыль (${Math.min(combos.length, 8)})</summary>` +
+      `<div class="watch-item" style="opacity:.85">Покупка ОДИНАКОВОГО ЧИСЛА АКЦИЙ в нескольких бакетах одного рынка (не равными суммами!): набор выплачивает $1 на комплект, если исход попал в ЛЮБОЙ из бакетов. Заработок делает серия, а не одна ставка: только ★-сетапы. Исполнение: ЛИМИТ-ордер в каждом бакете по текущему аску (потолок +1¢), одинаковое ЧИСЛО АКЦИЙ.</div>` +
+      combos.slice(0, 8).map(c => {
+        const st = kellyStake(c.pWin, c.pLo, c.cost, bankroll, limit);
+        const win = st*(1/c.cost - 1), evd = st*(c.pWin/c.cost - 1);
+        // Polymarket: минимум $1 на ордер. Считаем акции по ноге: max(целевые, минимум на $1)
+        const tgt = st/c.cost;
+        const legs = c.buckets.map(b => { const sh = Math.max(tgt, 1/b.ask); return { b, sh, usd: sh*b.ask }; });
+        const realUsd = legs.reduce((s,l) => s + l.usd, 0);
+        const legTxt = legs.map(l => `${esc(l.b.title)} ≤${fmtC(l.b.ask)} × ${l.sh.toFixed(1)} акц ($${l.usd.toFixed(2)})`).join(" · ");
+        const wide = (c.pHi - c.pLo) > 0.25 || c.r.cal.tier === "C";
+        const ser = c === sBest
+          ? `<div style="margin:2px 0 4px"><span class="chip" style="border-color:var(--good);color:var(--good-text);font-weight:600">★ СЕРИЯ — ставка дня</span> <span style="font-size:12.5px;color:var(--ink-2)">10 повторов по $${st.toFixed(2)}: ~${Math.round(10*c.pWin)} попаданий, ожидание +$${(10*st*(c.pWin/c.cost-1)).toFixed(0)}</span></div>` : "";
+        return `<div class="watch-item">${ser}${esc(c.r.city.name)} (${fmtDateRu(c.r.dateStr)})${c.r.mode === "min" ? " · МИНИМУМ" : ""} · бакеты: «${c.buckets.map(b => esc(b.title)).join("» + «")}» · цена ${fmtC(c.cost)} за $1 выплаты · P(выигрыша) <b>${fmtP(c.pWin)}</b> (перепроверка: ${fmtP(c.pLo)}–${fmtP(c.pHi)}) · ${st ? `<b>размер $${realUsd.toFixed(2)}</b> · попадание +$${win.toFixed(2)} · EV ${money(evd)}<div style="margin-top:4px;font-size:12.5px">ЛИМИТ-ордера: ${legTxt}${realUsd > 1.4*st ? ` <span class="chip s">⚠ минимум биржи $1 на ордер поднял сумму с $${st.toFixed(2)} до $${realUsd.toFixed(2)} — проверь стакан, тонкие ноги лучше пропустить</span>` : ""}</div>` : "<b>размер $0 — не ставить: осторожная оценка не даёт преимущества</b>"} · калибровка ${c.r.cal.tier}${wide ? ' · <span class="chip s">⚠ оценка неустойчива — минимальный размер</span>' : ""} · <a class="mlink" href="${c.r.link}" target="_blank" rel="noopener">рынок →</a></div>`;
+      }).join("") + `</details>`;
+  }
+  if (rest.length) html += `<details><summary>Ещё подтверждённые, не вошли в топ (${rest.length})</summary>` +
+    rest.map(g => [g.yes, g.no].filter(Boolean).map(t =>
+      `<div class="watch-item">${esc(g.city.name)} (${fmtDateRu(g.r.dateStr)}) · ${t.side} «${esc(t.b.title)}» по ${fmtC(t.cost)} · ${t.conf}/5 · модель ${fmtP(t.b.p)} vs рынок ${fmtP(t.b.mid)}</div>`).join("")).join("") + `</details>`;
+  if (watch.length) html += `<details><summary>Наблюдение — уверенность 3/5, не для входа (${watch.length})</summary>` +
+    watch.map(t => `<div class="watch-item">${esc(t.r.city.name)} (${fmtDateRu(t.r.dateStr)}) · ${t.side} «${esc(t.b.title)}» по ${fmtC(t.cost)} · модель ${fmtP(t.b.p)} vs рынок ${fmtP(t.b.mid)} · ${famLine(t.b)}</div>`).join("") + `</details>`;
+  if (blocked.length) html += `<details><summary>Заблокировано: ненадёжная калибровка станции (${blocked.length})</summary>` +
+    blocked.map(t => `<div class="skip-item">${esc(t.r.city.name)} (${fmtDateRu(t.r.dateStr)}) · ${t.side} «${esc(t.b.title)}» — тир C: поправка станции нестабильна, сигналу нельзя доверять без перекалибровки</div>`).join("") + `</details>`;
+  if (ineff.length) html += `<details><summary>Индекс неэффективности книг — где искать edge (топ-7)</summary>` +
+    ineff.slice(0,7).map(r => `<div class="watch-item">${esc(r.city.name)} (${fmtDateRu(r.dateStr)}) · сумма ask ${fmtC(r.sumAsk)}${r.sumAsk < 0.99 ? " — ЧИСТЫЙ АРБ" : r.sumAsk < 1.03 ? " — сырой рынок" : ""} · объём $${Math.round(r.volume).toLocaleString("en-US")}</div>`).join("") + `</details>`;
+  if (skipped.length) html += `<details><summary>Пропущено (${skipped.length})</summary>` +
+    skipped.map(r => `<div class="skip-item">${esc(r.city.name)} (${fmtDateRu(r.dateStr)}): ${esc(r.skip)}</div>`).join("") + `</details>`;
+  res.innerHTML = html;
+  prog.textContent = `Готово: ${results.length - skipped.length} рынков проанализировано, ${trades.length} кандидатов, ${picks.length} рекомендаций.`;
+  btn.disabled = false;
+}
+
+/* ============ инициализация ============ */
+function init(){
+  const chips = [0,1,2].map(l => {
+    const ds = isoPlus(l);
+    const on = l >= 1;
+    return `<label class="datechip${on ? " on" : ""}" id="chip${l}"><input type="checkbox" id="lead${l}"${on ? " checked" : ""}>${LEAD_NAMES[l]}, ${fmtDateRu(ds)}</label>`;
+  }).join(" ");
+  $("dateChips").innerHTML = chips;
+  [0,1,2].forEach(l => $("lead"+l).addEventListener("change", e => $("chip"+l).classList.toggle("on", e.target.checked)));
+
+  $("cityGrid").innerHTML = CITIES.map(c => {
+    const on = c.tier !== "C";
+    return `<label class="citychk"><input type="checkbox" id="city_${c.slug}"${on ? " checked" : ""}>${esc(c.name)} <span class="tier t${c.tier}">${c.tier}</span></label>`;
+  }).join("");
+  const updCount = () => $("cityCount").textContent = CITIES.filter(c => $("city_"+c.slug).checked).length;
+  CITIES.forEach(c => $("city_"+c.slug).addEventListener("change", updCount));
+  $("selReliable").onclick = () => { CITIES.forEach(c => { const k = calOf(c); $("city_"+c.slug).checked = !!k && k.tier !== "C"; }); updCount(); };
+  $("selAll").onclick = () => { CITIES.forEach(c => $("city_"+c.slug).checked = true); updCount(); };
+  $("selNone").onclick = () => { CITIES.forEach(c => $("city_"+c.slug).checked = false); updCount(); };
+  updCount();
+
+  $("calibApply").addEventListener("click", () => {
+    const st = $("calibStatus");
+    try {
+      const j = JSON.parse($("calibInput").value);
+      if (!j.cities) throw new Error("нет поля cities");
+      let applied = 0;
+      for (const c of CITIES){
+        const u = j.cities[c.slug];
+        if (!u) continue;
+        c.bias = +u.bias; c.n = +u.n; c.std = u.std == null ? null : +u.std; c.tier = u.tier || "C";
+        $("city_"+c.slug).checked = c.tier !== "C";
+        applied++;
+      }
+      $("cityGrid").querySelectorAll(".tier").forEach((el,i) => { el.textContent = CITIES[i].tier; el.className = "tier t"+CITIES[i].tier; });
+      $("cityCount").textContent = CITIES.filter(c => $("city_"+c.slug).checked).length;
+      let appliedMin = 0;
+      if (j.cities_min){
+        for (const slug in j.cities_min){
+          if (MIN_CAL[slug] !== undefined || CITIES.some(c => c.slug === slug)){
+            MIN_CAL[slug] = j.cities_min[slug]; appliedMin++;
+          }
+        }
+      }
+      if (j.cal_date) $("calDate").textContent = j.cal_date;
+      st.textContent = `Применено: ${applied} городов${appliedMin ? " + минимумы: " + appliedMin : ""}${j.cal_date ? ", калибровка от " + j.cal_date : ""}.`;
+    } catch(e){ st.innerHTML = `<span class="err">Ошибка: ${esc(e.message)}</span>`; }
+  });
+  const applyMode = m => {
+    MODE = m;
+    $("chipMax").classList.toggle("on", m === "max");
+    $("chipMin").classList.toggle("on", m === "min");
+    CITIES.forEach(c => {
+      const k = calOf(c);
+      const el = $("city_"+c.slug);
+      el.disabled = !k;
+      el.checked = !!k && k.tier !== "C";
+    });
+    $("cityGrid").querySelectorAll(".tier").forEach((el,i) => {
+      const k = calOf(CITIES[i]);
+      el.textContent = k ? k.tier : "—";
+      el.className = "tier t" + (k ? k.tier : "C");
+    });
+    updCount();
+  };
+  $("modeMax").addEventListener("change", () => applyMode("max"));
+  $("modeMin").addEventListener("change", () => applyMode("min"));
+  $("scanBtn").addEventListener("click", () => scan().catch(e => { $("progress").innerHTML = `<span class="err">Ошибка: ${esc(e.message)}</span>`; $("scanBtn").disabled = false; }));
+}
+init();
+</script>
+</body>
+</html>
