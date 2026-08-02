@@ -148,13 +148,15 @@ class TestPlanWeather(unittest.TestCase):
         w.plan_weather([], [pick], alloc, fetch=fetch)
         self.assertGreater(pick["stake"], 0.0)
 
-    def test_single_pick_without_mp_uses_allocator_floor(self):
-        """Одиночная ставка без mp использует глобальный порог аллокатора."""
+    def test_single_pick_without_mp_must_fail_closed(self):
+        """Одиночная ставка без mp должна быть отклонена (fail-closed)."""
         pick = dict(city="Чэнду", date="2026-08-03", stake=1.5, conf=4, ev=0.20)
-        # нет поля mp — аллокатор проверяет свой min_notional = 1.0
+        # нет поля mp — должен быть отказ
         alloc = w.BudgetAllocator()
         w.plan_weather([], [pick], alloc)
-        self.assertGreater(pick["stake"], 0.0)
+        self.assertEqual(pick["stake"], 0.0, "missing mp must result in stake=0")
+        self.assertIn("budget_block", pick, "missing mp must have budget_block reason")
+        self.assertIn("mp отсутствует", pick["budget_block"])
 
 
 if __name__ == "__main__":

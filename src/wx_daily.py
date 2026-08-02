@@ -806,49 +806,41 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
         mp_t = t.get("mp")
         wdate = t.get("date")
         
+        # Без mp fail closed — не торгуем
         if mp_t is None:
-            # Без mp используем allocator floor
-            t_min_notional = allocator.min_notional
-            if want < t_min_notional:
-                t["stake"] = 0.0
-                t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
-                                    f"ордера ${t_min_notional:.2f} (mp отсутствует)")
-                continue
-            # Резервируем без валидации книги (fail-open для совместимости)
-            granted = allocator.reserve(wdate, want, tag=f"single:{t.get('city')}:{wdate}") if want else 0.0
-            t["stake"] = granted
-            if granted <= 0: t["budget_block"] = "бюджет даты исчерпан"
+            t["stake"] = 0.0
+            t["budget_block"] = "нет торговых параметров рынка (mp отсутствует)"
+            continue
+        
+        # Проверяем минимальный нотионал
+        t_min_notional = mp_t.min_notional
+        if want < t_min_notional:
+            t["stake"] = 0.0
+            t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
+                                f"ордера этого рынка ${t_min_notional:.2f}")
+            continue
+        
+        left = allocator.remaining(wdate)
+        if left < t_min_notional:
+            t["stake"] = 0.0
+            t["budget_block"] = f"бюджет на {wdate} исчерпан: осталось ${left:.2f}"
+            continue
+        
+        # Валидируем исполнимость через реальную книгу
+        exec_result = single_lot(t, mp_t, left, fetch)
+        if not exec_result.get("ok"):
+            t["stake"] = 0.0
+            t["budget_block"] = exec_result.get("reason", "неисполнимая книга")
+            continue
+        
+        # Исполнимо — резервируем
+        exec_usd = exec_result["usd"]
+        granted = allocator.reserve(wdate, exec_usd, tag=f"single:{t.get('city')}:{wdate}")
+        if granted + 1e-9 < exec_usd:
+            t["stake"] = 0.0
+            t["budget_block"] = f"остаток бюджета ${granted:.2f} < исполнимая сумма ${exec_usd:.2f}"
         else:
-            # С mp выполняем ПОЛНУЮ валидацию через реальную книгу
-            t_min_notional = mp_t.min_notional
-            if want < t_min_notional:
-                t["stake"] = 0.0
-                t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
-                                    f"ордера этого рынка ${t_min_notional:.2f}")
-                continue
-            
-            left = allocator.remaining(wdate)
-            if left < t_min_notional:
-                t["stake"] = 0.0
-                t["budget_block"] = f"бюджет на {wdate} исчерпан: осталось ${left:.2f}"
-                continue
-            
-            # Валидируем исполнимость через реальную книгу
-            exec_result = single_lot(t, mp_t, left, fetch)
-            if not exec_result.get("ok"):
-                t["stake"] = 0.0
-                t["budget_block"] = exec_result.get("reason", "неисполнимая книга")
-                continue
-            
-            # Исполнимо — резервируем
-            exec_usd = exec_result["usd"]
-            granted = allocator.reserve(wdate, exec_usd, tag=f"single:{t.get('city')}:{wdate}")
-            if granted + 1e-9 < exec_usd:
-                t["stake"] = 0.0
-                t["budget_block"] = f"остаток бюджета ${granted:.2f} < исполнимая сумма ${exec_usd:.2f}"
-            else:
-                t["stake"] = granted
-                t["exec"] = exec_result
+            t["stake"] = granted
     return approved
 
 PM_WALLET = ""  # публичный адрес кошелька Polymarket (0x...); пустой = блок портфеля выключен.
