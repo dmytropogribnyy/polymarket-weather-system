@@ -815,4 +815,5 @@ def main():
         quakes=quakes, crypto=crypto,
     ), ensure_ascii=False, indent=1))
 
-main()
+if __name__ == "__main__":   # импорт модуля тестами не должен ходить в сеть
+    main()
