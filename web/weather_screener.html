@@ -572,7 +572,7 @@ async function loadPortfolio(){
     for (const p of (pos||[])){
       const leg = { bucket: bucketOf(p.title), outcome: p.outcome, shares: +p.size,
                     avg: +p.avgPrice, cost: +p.initialValue, payout: +p.size };
-      if (p.redeemable){ if (leg.payout > 0.01) redeem.push(leg); }
+      if (p.redeemable){ const won = +p.currentValue || 0; if (won > 0.01) redeem.push({...leg, payout: won}); }
       else if (leg.shares > 0.01) (openEv[p.eventSlug] = openEv[p.eventSlug] || []).push(leg);
     }
     let html = `<div class="card" style="margin-top:8px"><b>Портфель $${value}</b> · куплено сегодня $${spentToday.toFixed(2)} · остаток дневного лимита <b>$${dayLeft.toFixed(2)}</b>`;

@@ -219,8 +219,9 @@ def portfolio_scan(wallet=None):
                    cur=round(p.get("curPrice", 0), 3), cost=round(p.get("initialValue", 0), 2),
                    payout=round(p.get("size", 0), 2))
         if p.get("redeemable"):
-            if row["payout"] > 0.01:
-                redeem.append(dict(row, event=p.get("eventSlug"), pnl=round(p.get("cashPnl", 0), 2)))
+            won = round(p.get("currentValue", 0), 2)   # проигравшие акции стоят 0 — забирать нечего
+            if won > 0.01:
+                redeem.append(dict(row, payout=won, event=p.get("eventSlug"), pnl=round(p.get("cashPnl", 0), 2)))
         elif row["shares"] > 0.01:
             open_ev.setdefault(p.get("eventSlug"), []).append(row)
     events = []
