@@ -218,8 +218,8 @@ def _fee_rate_canonical(m):
     Если feesEnabled=True, а расписание не читается или содержит неподдерживаемые
     значения — (None, True) → fail-closed.
     
-    Поддерживаемая модель: rate×price^exponent×(1−price)^exponent, exponent=1 (стандартная
-    квадратичная кривая), takerOnly=True (одинаковая комиссия тейкера/мейкера не поддерживается)."""
+    Поддерживаемая модель: exponent=2 (квадратичная кривая rate*price*(1-price)),
+    takerOnly=True (одинаковая комиссия тейкера/мейкера не поддерживается)."""
     fees_enabled = m.get("feesEnabled")
     if fees_enabled is None:
         return None, False
@@ -229,15 +229,10 @@ def _fee_rate_canonical(m):
     rate = _num(schedule, "rate")
     if rate is None:
         return None, True                    # включено, но rate отсутствует
-    # Проверяем exponent: если присутствует, обязан быть 1 (квадратичная кривая)
+    # Проверяем exponent: если присутствует, обязан быть 2 (квадратичная кривая)
     exponent = schedule.get("exponent")
-    if exponent is not None:
-        try:
-            exp_val = float(exponent)
-            if abs(exp_val - 1.0) > 1e-9:
-                return None, True            # неподдерживаемый exponent
-        except (TypeError, ValueError):
-            return None, True                # битый exponent
+    if exponent is not None and exponent != 2:
+        return None, True                    # неподдерживаемый exponent
     # Проверяем takerOnly: если присутствует, обязан быть True
     taker_only = schedule.get("takerOnly")
     if taker_only is not None and not taker_only:
