@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Quake watchdog: recent big quakes + market gaps. Stdlib only."""
 import json, math, re, time, urllib.request, urllib.parse
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 
 def get(url, tries=3):
@@ -47,8 +48,121 @@ def q_prange(lo, hi, n_obs, lam):
 BANKROLL = 100.0  # банкролл Дмитрия, $ — обновляется по мере роста счёта
 DAY_LIMIT = 15.0  # дневной лимит, $ — фаза проверки; после 30 ставок с подтверждённой точностью поднять до 25
 
-def fee(a): return 0.05*a*(1-a)   # тейкер-комиссия Polymarket, $/акцию
-def allin(a): return a + fee(a)    # полная цена входа
+def fee(price, mp):
+    """Комиссия тейкера, $/акцию, по ставке КОНКРЕТНОГО рынка."""
+    return mp.fee_rate*price*(1-price)
+
+def allin(price, mp):
+    """Полная цена входа: цена + комиссия этого рынка."""
+    return price + fee(price, mp)
+
+# ---------- торговые параметры КОНКРЕТНОГО рынка (fail-closed) ----------
+# Те же правила, что в src/wx_daily.py. Код продублирован намеренно: сторож
+# запускается отдельным файлом и не может импортировать соседний модуль.
+MarketParams = namedtuple("MarketParams", "fee_rate tick min_order min_shares source")
+
+FEE_RATE_MAX = 0.20    # санитарный потолок ставки комиссии
+TICK_MAX = 0.10        # шаг цены крупнее 10¢ — данные битые
+MIN_ORDER_MAX = 100.0  # минимальный ордер дороже $100 — данные битые
+CLOB_MARKET_URL = "https://clob.polymarket.com/markets/"
+PARAM_FAILS = []       # рынки, снятые из-за неподтверждённых параметров
+
+def _num(src, *keys):
+    for k in keys:
+        v = src.get(k)
+        if v in (None, ""): continue
+        try: return float(v)
+        except (TypeError, ValueError): return None
+    return None
+
+def _fee_rate(v):
+    """taker_base_fee: >1 — базисные пункты (500 → 0.05), 0..1 — уже доля."""
+    if v is None: return None
+    return v/10000.0 if v > 1 else float(v)
+
+def parse_market_params(m):
+    """Ничего не подставляем по умолчанию: нет поля или значение вне
+    санитарных границ — None, и рынок не торгуется."""
+    if not isinstance(m, dict): return None
+    fee_rate = _fee_rate(_num(m, "taker_base_fee", "takerBaseFee", "tbf",
+                              "feeRateBps", "fee_rate_bps"))
+    tick = _num(m, "minimum_tick_size", "orderPriceMinTickSize", "mts", "tickSize")
+    min_order = _num(m, "minimum_order_size", "orderMinSize", "mos", "minimumOrderSize")
+    min_shares = _num(m, "minimum_order_size_shares", "minSharesSize", "minimumOrderShares") or 0.0
+    if fee_rate is None or tick is None or min_order is None: return None
+    if not (0.0 <= fee_rate <= FEE_RATE_MAX): return None
+    if not (0.0 < tick <= TICK_MAX): return None
+    if not (0.0 < min_order <= MIN_ORDER_MAX): return None
+    if min_shares < 0: return None
+    return MarketParams(fee_rate=fee_rate, tick=tick, min_order=min_order,
+                        min_shares=min_shares, source="market")
+
+def market_params(m, fetch=None):
+    """Сначала поля Gamma, при нехватке — добор из CLOB по conditionId."""
+    p = parse_market_params(m)
+    if p: return p
+    cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
+    if not cid: return None
+    try: raw = (fetch or get)(CLOB_MARKET_URL + str(cid))
+    except Exception: return None
+    if not isinstance(raw, dict): return None
+    merged = dict(m); merged.update(raw)
+    return parse_market_params(merged)
+
+def event_params(markets, fetch=None):
+    """Параметры обязаны быть у КАЖДОГО торгуемого бакета, иначе None.
+    При расхождении берём худший вариант."""
+    markets = list(markets or [])
+    if not markets: return None
+    ps = []
+    for m in markets:
+        p = market_params(m, fetch)
+        if p is None: return None
+        ps.append(p)
+    return MarketParams(fee_rate=max(p.fee_rate for p in ps),
+                        tick=max(p.tick for p in ps),
+                        min_order=max(p.min_order for p in ps),
+                        min_shares=max(p.min_shares for p in ps),
+                        source="event")
+
+def _token_ids(m):
+    try:
+        ti = (m or {}).get("clobTokenIds")
+        ti = json.loads(ti) if isinstance(ti, str) else ti
+        return list(ti) if ti else [None, None]
+    except Exception:
+        return [None, None]
+
+def check_arb_legs(legs, mp, fetch=None):
+    """Связка засчитывается ТОЛЬКО как исполнимая: полные цены с комиссиями
+    ЭТОГО рынка, реальные уровни стакана и минимальный ордер на каждой ноге.
+    «Сумма асков ниже единицы» гарантией не является.
+    legs: [(token_id, котируемая цена)]."""
+    fetch = fetch or get
+    sets, cost, lots = None, 0.0, []
+    for tid, _quoted in legs:
+        if not tid:
+            return dict(ok=False, why="нет идентификатора книги", exec_sets=0, exec_profit=0.0)
+        try:
+            book = fetch(f"https://clob.polymarket.com/book?token_id={tid}")
+            asks = sorted((float(a["price"]), float(a["size"])) for a in book.get("asks", []))
+        except Exception:
+            return dict(ok=False, why="книга недоступна", exec_sets=0, exec_profit=0.0)
+        if not asks:
+            return dict(ok=False, why="пустая книга", exec_sets=0, exec_profit=0.0)
+        price, size = asks[0]
+        cost += allin(price, mp)
+        sets = size if sets is None else min(sets, size)
+        lots.append((price, size))
+    sets = int(math.floor(sets or 0))
+    res = dict(exec_sets=sets, exec_cost=round(cost, 3), exec_profit=0.0)
+    if sets <= 0:
+        return dict(res, ok=False, why="в книге нет объёма")
+    if cost >= 1.0:
+        return dict(res, ok=False, why=f"полная цена комплекта {cost:.3f} ≥ $1 — прибыли нет")
+    if any(allin(pr, mp)*sets + 1e-9 < mp.min_order for pr, _ in lots):
+        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_order:g} по каждой ноге")
+    return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
 def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25):
     """Рекомендуемый размер: четверть Келли по осторожной вероятности
@@ -63,16 +177,16 @@ def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25):
     s = min(bankroll*f*frac, cap)
     return 0.0 if s < 0.5 else round(max(s, 1.0), 2)
 
-def chance_combos(rows, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
+def chance_combos(rows, mp, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
     """«Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка.
     Платим sum(ask) за $1 выплаты, выигрываем если исход попал в набор.
     Жадный набор по ценности p/ask; шаг фиксируется при P>=min_p и EV>=min_ev."""
     cand = [r for r in rows if r.get("ask") and 0.03 <= r["ask"] <= 0.9 and r["p"] >= 0.03]
-    cand.sort(key=lambda r: -r["p"]/allin(r["ask"]))
+    cand.sort(key=lambda r: -r["p"]/allin(r["ask"], mp))
     steps, S, cost, P, Plo, Phi = [], [], 0.0, 0.0, 0.0, 0.0
     for r in cand:
         if len(S) >= max_n: break
-        ca = allin(r["ask"])
+        ca = allin(r["ask"], mp)
         if cost + ca > max_cost: continue
         if (P + r["p"])/(cost + ca) - 1 < min_ev: break
         S.append((r["bucket"], r["ask"], r.get("tid"), r["p"])); cost += ca; P += r["p"]
@@ -84,14 +198,15 @@ def chance_combos(rows, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
                 ret=round(1/cost - 1, 2), ev=round(P/cost - 1, 2)))
     return steps
 
-def quake_scan():
+def quake_scan(fetch=None):
     """Контур №2: рынки числа землетрясений против Пуассона (USGS)."""
+    fetch = fetch or get
     now_ts = datetime.now(timezone.utc).timestamp()
     rates = {}
     for mag in ("5.5", "6.5", "7.0"):
-        c = get(f"https://earthquake.usgs.gov/fdsnws/event/1/count?format=geojson&starttime=2025-08-01&endtime=2026-08-01&minmagnitude={mag}")
+        c = fetch(f"https://earthquake.usgs.gov/fdsnws/event/1/count?format=geojson&starttime=2025-08-01&endtime=2026-08-01&minmagnitude={mag}")
         rates[mag] = c["count"]/365.0
-    d = get("https://gamma-api.polymarket.com/public-search?q=or%20above%20earthquakes&limit_per_type=12&events_status=active")
+    d = fetch("https://gamma-api.polymarket.com/public-search?q=or%20above%20earthquakes&limit_per_type=12&events_status=active")
     out = []
     for e in d.get("events", []):
         slug = e.get("slug","")
@@ -100,7 +215,7 @@ def quake_scan():
         if not mm: continue
         mag = f"{mm.group(1)}.{mm.group(2)}"
         if mag not in rates: continue
-        full = get(f"https://gamma-api.polymarket.com/events?slug={slug}")[0]
+        full = fetch(f"https://gamma-api.polymarket.com/events?slug={slug}")[0]
         if full.get("closed"): continue
         w = re.search(r"between (\w+) (\d+), (\d+),? 12:00 AM ET,? and (\w+) (\d+), (\d+),? 11:59 PM ET", full["description"])
         if w:
@@ -111,17 +226,25 @@ def quake_scan():
         else: continue
         if now_ts >= t1: continue
         iso0 = datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        feats = get(f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={iso0}&minmagnitude={mag}&limit=1000").get("features", [])
+        feats = fetch(f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={iso0}&minmagnitude={mag}&limit=1000").get("features", [])
         n_obs = len(feats)
         borderline = sum(1 for f in feats if abs(f["properties"].get("mag", 0) - float(mag)) < 0.1)
         t_rem = max(0.0, (t1 - now_ts)/86400.0)
         lam = rates[mag] * t_rem
         vol = float(full.get("volume") or 0)
         volpen = 1 if vol < 10000 else 0
-        qasks = [m.get("bestAsk") for m in full["markets"] if q_bucket(m.get("groupItemTitle"))]
+        qmarkets = [m for m in full["markets"] if q_bucket(m.get("groupItemTitle"))]
+        mp = event_params(qmarkets, fetch)   # свои параметры рынка, не погодная константа
+        if mp is None:
+            PARAM_FAILS.append(f"{slug}: торговые параметры рынка не подтверждены"); continue
+        qasks = [m.get("bestAsk") for m in qmarkets]
         ok_asks = len(qasks) >= 3 and all(a is not None for a in qasks)
         q_sum_ask = round(sum(qasks), 3) if ok_asks else None
-        q_sum_allin = round(sum(allin(a) for a in qasks), 3) if ok_asks else None
+        q_sum_allin = round(sum(allin(a, mp) for a in qasks), 3) if ok_asks else None
+        # «сумма асков < $1» — только кандидат; арбитраж засчитывается лишь после
+        # полных цен с комиссиями рынка, уровней книг и минимального ордера.
+        q_arb = (check_arb_legs([(_token_ids(m)[0], m.get("bestAsk")) for m in qmarkets], mp, fetch)
+                 if (q_sum_allin is not None and q_sum_allin < 0.995) else None)
         picks, watch, qrows = [], [], []
         for m in full["markets"]:
             rng = q_bucket(m.get("groupItemTitle"))
@@ -135,14 +258,14 @@ def quake_scan():
             pHi = q_prange(*rng, n_obs, lam*1.4)
             qrows.append(dict(bucket=m.get("groupItemTitle"), p=p, pLo=pLo, pHi=pHi, ask=ba))
             if ba is not None and 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                c = allin(ba)
+                c = allin(ba, mp)
                 robust = pLo >= 1.5*c and pHi >= 1.5*c
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
                 (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=round(c,3),
                     p=round(p,3), mid=round(mid,3), ev=round(p*(1/c-1)-(1-p),2), conf=conf,
                     stake=kelly_stake(p, min(pLo, pHi), c)))
             if bb is not None and mid >= 0.25 and (mid-p) >= 0.15:
-                c = allin(1-bb)
+                c = allin(1-bb, mp)
                 robust = (mid-pLo >= 0.10) and (mid-pHi >= 0.10)
                 conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
                 (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(c,3),
@@ -150,7 +273,8 @@ def quake_scan():
                     stake=kelly_stake(1-p, 1-max(pLo, pHi), c)))
         out.append(dict(title=full["title"], n_obs=n_obs, borderline=borderline, t_rem_days=round(t_rem,1),
                         lam_rem=round(lam,2), vol=int(vol), picks=picks, watch=watch[:4],
-                        combos=chance_combos(qrows)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask, sum_allin=q_sum_allin,
+                        combos=chance_combos(qrows, mp)[-2:] if vol >= 500 else [],
+                        sum_ask=q_sum_ask, sum_allin=q_sum_allin, arb=q_arb,
                         link=f"https://polymarket.com/event/{slug}"))
     return out
 
@@ -161,8 +285,8 @@ MONTHS_LOW = ["january","february","march","april","may","june","july","august",
 
 def norm_cdf(x): return 0.5*(1+math.erf(x/math.sqrt(2)))
 
-def load_surface(cur):
-    rows = get(f"https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency={cur}&kind=option")["result"]
+def load_surface(cur, fetch=None):
+    rows = (fetch or get)(f"https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency={cur}&kind=option")["result"]
     surf = {}
     for r in rows:
         parts = r["instrument_name"].split("-")
@@ -213,18 +337,19 @@ def prob_above(surf, K, t_res, iv_mult=1.0):
     s = math.sqrt(max(w, 1e-9))
     return norm_cdf((math.log(F/K) - 0.5*w)/s)
 
-def crypto_scan():
+def crypto_scan(fetch=None):
     """Рынки BTC/ETH above $K против риск-нейтральных вероятностей опционов."""
+    fetch = fetch or get
     now = datetime.now(timezone.utc)
     out = []
     for cur, pref in (("BTC","bitcoin"), ("ETH","ethereum")):
-        try: surf = load_surface(cur)
+        try: surf = load_surface(cur, fetch)
         except Exception as e:
             out.append(dict(error=f"deribit {cur}: {str(e)[:60]}")); continue
         for dd in range(0, 8):
             d = now + timedelta(days=dd)
             slug = f"{pref}-above-on-{MONTHS_LOW[d.month-1]}-{d.day}-{d.year}"
-            try: evs = get(f"https://gamma-api.polymarket.com/events?slug={slug}")
+            try: evs = fetch(f"https://gamma-api.polymarket.com/events?slug={slug}")
             except Exception: continue
             if not evs or evs[0].get("closed"): continue
             ev = evs[0]
@@ -233,14 +358,18 @@ def crypto_scan():
             vol = float(ev.get("volume") or 0)
             if vol < 500: continue
             volpen = 1 if vol < 10000 else 0
+            kmarkets = [m for m in ev["markets"]
+                        if re.match(r"^\d+$", (m.get("groupItemTitle") or "").replace(",", "").replace("$", ""))]
+            mp = event_params(kmarkets, fetch)   # комиссии крипты — СВОИ, не погодная константа
+            if mp is None:
+                PARAM_FAILS.append(f"{slug}: торговые параметры рынка не подтверждены"); continue
             picks, watch, klist = [], [], []
-            for m in ev["markets"]:
+            for m in kmarkets:
                 t = (m.get("groupItemTitle") or "").replace(",", "").replace("$", "")
-                if not re.match(r"^\d+$", t): continue
                 K = float(t)
                 bb, ba = m.get("bestBid"), m.get("bestAsk")
                 if bb is None or ba is None: continue
-                klist.append((K, bb, ba))
+                klist.append((K, bb, ba, _token_ids(m)))
                 mid = (bb+ba)/2
                 p = prob_above(surf, K, t_res)
                 if p is None: continue
@@ -249,45 +378,52 @@ def crypto_scan():
                 lo, hi = min(pa, pb), max(pa, pb)
                 row = dict(strike=int(K), p=round(p,3), mid=round(mid,3))
                 if 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                    c = allin(ba)
+                    c = allin(ba, mp)
                     conf = max(1, min(5, 3 + (1 if lo >= 1.5*c else 0) - volpen))
                     (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
                         ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
                 if mid >= 0.25 and (mid-p) >= 0.15:
-                    c = allin(1-bb)
+                    c = allin(1-bb, mp)
                     conf = max(1, min(5, 3 + (1 if (mid-hi) >= 0.10 else 0) - volpen))
                     (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(c,3),
                         ev=round((1-p)*(1/c-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, c)))
                 if ba > 0.25 and (p-mid) >= 0.15:
-                    c = allin(ba)
+                    c = allin(ba, mp)
                     conf = max(1, min(5, 3 + (1 if (lo-mid) >= 0.10 else 0) - volpen))
                     (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
                         ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
             # арбитраж на монотонности страйков: YES K1 + NO K2 (K1<K2) платит >= $1 всегда
             arbs = []
-            for (k1, b1, a1), (k2, b2, a2) in zip(sorted(klist), sorted(klist)[1:]):
-                c = allin(a1) + allin(1 - b2)   # полные цены обеих ног
-                if c < 0.99:
-                    arbs.append(dict(k1=int(k1), k2=int(k2), cost=round(c, 3), profit=round(1-c, 3)))
+            ks = sorted(klist)
+            for (k1, b1, a1, t1), (k2, b2, a2, t2) in zip(ks, ks[1:]):
+                c = allin(a1, mp) + allin(1 - b2, mp)   # полные цены обеих ног
+                if c >= 1.0: continue
+                arb = check_arb_legs([(t1[0], a1), (t2[1], 1 - b2)], mp, fetch)
+                arb.update(k1=int(k1), k2=int(k2), cost=round(c, 3))
+                if arb["ok"]:                            # только исполнимая связка считается связкой
+                    arbs.append(arb)
             if picks or watch or arbs:
                 out.append(dict(title=ev["title"], date=d.strftime("%Y-%m-%d"), vol=int(vol),
                                 picks=picks, watch=watch[:3], arbs=arbs,
                                 link=f"https://polymarket.com/event/{slug}"))
     return out
 
-def main():
+def main(fetch=None):
+    fetch = fetch or get
     now = datetime.now(timezone.utc)
     since = (now - timedelta(hours=7)).strftime("%Y-%m-%dT%H:%M:%S")
-    recent = get(f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={since}&minmagnitude=6.5").get("features", [])
+    recent = fetch(f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={since}&minmagnitude=6.5").get("features", [])
     recent_big = [dict(mag=f["properties"].get("mag"), place=f["properties"].get("place"),
                        time=datetime.fromtimestamp(f["properties"]["time"]/1000, tz=timezone.utc).strftime("%H:%M UTC"))
                   for f in recent]
-    try: markets = quake_scan()
+    try: markets = quake_scan(fetch)
     except Exception as e: markets = [{"error": str(e)[:100]}]
-    try: crypto = crypto_scan()
+    try: crypto = crypto_scan(fetch)
     except Exception as e: crypto = [{"error": str(e)[:100]}]
     print(json.dumps(dict(generated=now.strftime("%Y-%m-%d %H:%M UTC"), bankroll=BANKROLL,
-                          recent_m65_last7h=recent_big, markets=markets, crypto=crypto),
+                          recent_m65_last7h=recent_big, markets=markets, crypto=crypto,
+                          param_checks=PARAM_FAILS),
                      ensure_ascii=False, indent=1))
 
-main()
+if __name__ == "__main__":
+    main()

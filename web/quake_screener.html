@@ -221,10 +221,12 @@ async function scan(){
       const good = trades.filter(t => t.conf >= 4).sort((a,z) => z.ev-a.ev);
       const watch = trades.filter(t => t.conf === 3);
       if (good.length) anyTrade = true;
+      // Сумма асков ниже $1 — ТОЛЬКО кандидат: комиссии и объём в книгах здесь не проверяются,
+      // поэтому «гарантированного арбитража» страница не обещает.
       if (sumAsk != null && sumAsk < 0.99 && !arbMkt) arbMkt = { title: full.title, sumAsk, slug: e.slug };
       for (const t of good) if (!bestGood || t.ev > bestGood.ev) bestGood = { ...t, title: full.title, slug: e.slug };
       const chips = [];
-      if (sumAsk != null && sumAsk < 0.99) chips.push(`<span class="chip s">★ ЧИСТЫЙ АРБИТРАЖ: все бакеты вместе стоят ${fmtC(sumAsk)} — гарантированные +${fmtC(1-sumAsk)} с $1-комплекта</span>`);
+      if (sumAsk != null && sumAsk < 0.99) chips.push(`<span class="chip s">Кандидат в связку: сумма асков ${fmtC(sumAsk)} — БЕЗ комиссий и без проверки объёма книг. Это не арбитраж, пока не посчитаны комиссия тейкера и исполнимые лоты по каждому бакету.</span>`);
       if (borderline > 0) chips.push(`<span class="chip s">⚠ пограничных толчков (±0.1 от порога): ${borderline} — USGS может пересмотреть магнитуды</span>`);
       if (volpen) chips.push(`<span class="chip w">⚠ тонкий рынок ($${Math.round(vol).toLocaleString("en-US")}) — только лимитные ордера</span>`);
       html += `<div class="card">
@@ -240,7 +242,7 @@ async function scan(){
       </div>`;
     }
     let verdict;
-    if (arbMkt) verdict = `<div class="card" style="border-left:3px solid var(--good-text)"><b style="color:var(--good-text)">★ ВЕРДИКТ (землетрясения): ЧИСТЫЙ АРБИТРАЖ</b> — ${esc(arbMkt.title)}: покупка YES на все бакеты стоит ${fmtC(arbMkt.sumAsk)} → гарантированные +${fmtC(1-arbMkt.sumAsk)} с каждого $1-комплекта при любом исходе. Книги тонкие — лимитники, начни с 1-2 комплектов. <a class="mlink" href="https://polymarket.com/event/${arbMkt.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
+    if (arbMkt) verdict = `<div class="card"><b>ВЕРДИКТ (землетрясения): кандидат в связку, ставки нет</b> — ${esc(arbMkt.title)}: сумма асков по всем бакетам ${fmtC(arbMkt.sumAsk)}. Это НЕ гарантированный арбитраж: цены без комиссии тейкера, объём книг не проверен, минимальный ордер может не собраться. Прибыль считается только по полным ценам с комиссиями и реально исполнимым лотам — см. ночной отчёт (src/wx_daily.py, quake_scan). <a class="mlink" href="https://polymarket.com/event/${arbMkt.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
     else if (bestGood) verdict = `<div class="card" style="border-left:3px solid var(--good-text)"><b style="color:var(--good-text)">★ ВЕРДИКТ (землетрясения): СТАВИТЬ</b> — ${esc(bestGood.title)}: КУПИТЬ ${bestGood.side} «${esc(bestGood.b)}» до ${fmtC(bestGood.cost)} · модель ${fmtP(bestGood.p)} vs рынок ${fmtP(bestGood.mid)} · ${bestGood.conf}/5 · <b>размер $${(kellyStake(bestGood.pBase ?? bestGood.p, bestGood.pCons, bestGood.cost, bankroll, cap) || 1).toFixed(2)}</b> (четверть Келли от банкролла $${bankroll}) · исполнение: цена &lt;10¢ — ЛИМИТ по аску (потолок +1¢), дороже — можно маркетом с проверкой средней цены. <a class="mlink" href="https://polymarket.com/event/${bestGood.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
     else verdict = `<div class="card"><b>ВЕРДИКТ (землетрясения): реальных ставок нет — пропуск.</b> Рынки запрайсены честно; сторож (каждые 6 ч) и вечерний отчёт следят автоматически.</div>`;
     res.innerHTML = verdict + (html || `<div class="card"><div class="empty-note">Активных рынков землетрясений не найдено.</div></div>`);
