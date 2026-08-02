@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Погодный скринер · Polymarket · v4.8</title>
+<title>Погодный скринер · Polymarket · v4.9</title>
 <style>
   :root {
     color-scheme: light;
@@ -109,7 +109,7 @@
 </style>
 </head>
 <body>
-<h1>Погодный скринер · Polymarket <span style="font-size:13px;color:var(--ink-3)">v4.8 · 48 городов · вердикт, лоты, банкролл $100</span></h1>
+<h1>Погодный скринер · Polymarket <span style="font-size:13px;color:var(--ink-3)">v4.9 · 48 городов · вердикт, лоты, банкролл $100</span></h1>
 <div class="sub">Суперансамбль 143 члена (ECMWF 51 + GFS 31 + ICON 40 + GEM 21) на станции резолюции → поправка станции → вероятности бакетов → сравнение с ценами. Горизонт до послезавтра — дальше прогноз слишком размывается. Показываются только сетапы с уверенностью ≥4/5. Калибровка: <span id="calDate">1 августа 2026</span>.</div>
 
 <div class="card">
@@ -126,6 +126,11 @@
     <label class="datechip" id="chipStrict" title="Только 5/5 и высокий EV — включай, когда наберётся статистика 30+ ставок"><input type="checkbox" id="strictMode">строгий отбор</label>
     <button id="scanBtn">Сканировать рынки</button>
   </div>
+  <div class="row">
+    <div class="field" style="flex:1;min-width:300px"><label>Кошелёк Polymarket (публичный адрес 0x… — только чтение, ключи не нужны)</label><input type="text" id="walletInput" placeholder="0x…" spellcheck="false"></div>
+    <button class="minibtn" id="pfBtn" style="align-self:flex-end">Мой портфель</button>
+  </div>
+  <div id="pfPanel"></div>
   <details>
     <summary>Города (<span id="cityCount"></span> выбрано) · калибровка: A — надёжная, B — средняя, C — не доверять</summary>
     <div class="row" style="margin-top:8px">
@@ -537,6 +542,64 @@ function cityCard(g, stake, rank){
     <div style="margin-top:10px"><a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть рынок (резолюция — местный день города) →</a></div>
   </div>`;
 }
+
+/* ============ портфель (data-api, только чтение по публичному адресу) ============ */
+function bucketOf(title){
+  const m = /(-?\d+(?:--?\d+)?°[CF](?: or (?:below|higher|above))?)/.exec(title || "");
+  return m ? m[1] : (title || "?");
+}
+async function loadPortfolio(){
+  const w = ($("walletInput").value || "").trim();
+  const panel = $("pfPanel");
+  if (!/^0x[a-fA-F0-9]{40}$/.test(w)){
+    panel.innerHTML = `<div class="limit-warn" style="margin-top:8px">Вставь публичный адрес кошелька (строка 0x… из 42 символов). Никогда не вводи сюда сид-фразу или приватный ключ.</div>`;
+    return;
+  }
+  panel.innerHTML = `<div style="margin-top:8px;color:var(--ink-3)">Загружаю портфель…</div>`;
+  try{
+    const [pos, val, act] = await Promise.all([
+      fetch(`https://data-api.polymarket.com/positions?user=${w}`).then(r=>r.json()),
+      fetch(`https://data-api.polymarket.com/value?user=${w}`).then(r=>r.json()).catch(()=>null),
+      fetch(`https://data-api.polymarket.com/activity?user=${w}&limit=100`).then(r=>r.json()).catch(()=>[]),
+    ]);
+    const value = val && val[0] ? (+val[0].value).toFixed(2) : "?";
+    const mid = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())/1000;
+    let spentToday = 0;
+    for (const a of (act||[])) if (a.timestamp >= mid && a.type === "TRADE" && a.side === "BUY") spentToday += +a.usdcSize || 0;
+    const lim = Math.max(1, +$("limitInput").value || 15);
+    const dayLeft = Math.max(0, lim - spentToday);
+    const openEv = {}, redeem = [];
+    for (const p of (pos||[])){
+      const leg = { bucket: bucketOf(p.title), outcome: p.outcome, shares: +p.size,
+                    avg: +p.avgPrice, cost: +p.initialValue, payout: +p.size };
+      if (p.redeemable){ if (leg.payout > 0.01) redeem.push(leg); }
+      else if (leg.shares > 0.01) (openEv[p.eventSlug] = openEv[p.eventSlug] || []).push(leg);
+    }
+    let html = `<div class="card" style="margin-top:8px"><b>Портфель $${value}</b> · куплено сегодня $${spentToday.toFixed(2)} · остаток дневного лимита <b>$${dayLeft.toFixed(2)}</b>`;
+    if (redeem.length){
+      const tot = redeem.reduce((s,r)=>s+r.payout,0);
+      html += ` · <span class="pos">к забору $${tot.toFixed(2)} (кнопка Claim на Polymarket)</span>`;
+    }
+    html += `</div>`;
+    for (const [slug, legs] of Object.entries(openEv)){
+      const spent = legs.reduce((s,l)=>s+l.cost,0);
+      html += `<div class="card" style="margin-top:6px"><b>${slug}</b> · вложено $${spent.toFixed(2)}<table style="margin-top:4px"><tr><th>если сыграет</th><th>чистыми</th></tr>`;
+      const outs = legs.map(l=>l.bucket).concat(["любой другой исход"]);
+      for (const b of outs){
+        let ret = 0;
+        for (const l of legs) if ((l.outcome === "Yes") === (l.bucket === b)) ret += l.payout;
+        const net = ret - spent;
+        html += `<tr><td>${b}</td><td class="${net>=0?"pos":"neg"}">${net>=0?"+":"\u2212"}$${Math.abs(net).toFixed(2)}</td></tr>`;
+      }
+      html += `</table></div>`;
+    }
+    if (!Object.keys(openEv).length) html += `<div style="margin-top:6px;color:var(--ink-3)">Открытых позиций нет.</div>`;
+    panel.innerHTML = html;
+  }catch(e){
+    panel.innerHTML = `<div class="err" style="margin-top:8px">Не удалось загрузить портфель: ${e.message}</div>`;
+  }
+}
+document.addEventListener("DOMContentLoaded", ()=>{ const b = $("pfBtn"); if (b) b.onclick = loadPortfolio; });
 
 /* ============ сканирование ============ */
 async function scan(){

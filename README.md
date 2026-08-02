@@ -1,65 +1,80 @@
 # Polymarket weather system
 
-Система поиска расхождений между ценами толпы на Polymarket и вероятностями,
-посчитанными по метеорологическим ансамблям. Три контура: температура (основной),
-землетрясения, крипта.
+A system for finding gaps between Polymarket crowd prices and probabilities
+computed from meteorological ensembles. Three circuits: temperature markets
+(the core), earthquake-count markets, and crypto price markets.
 
-Базовая идея одна: **прибыль — это разрыв между ценой рынка и настоящей
-вероятностью**. Точность прогноза сама по себе денег не приносит, она лишь
-пропуск к участию. Зарабатывает только расхождение.
+One idea underneath everything: **profit is the gap between the market price
+and the true probability.** Forecast accuracy by itself earns nothing — it is
+merely the ticket to play. Only the mispricing pays.
 
-## Что здесь лежит
+## What's inside
 
 ```
-src/wx_daily.py      главный сканер: калибровка станций, вероятности, комбо,
-                     размеры ставок, исполнимые лоты, вердикт дня
-src/watchdog.py      сторож, крутится раз в 6 часов: свежие землетрясения,
-                     арбитраж в контурах №2 и №3
-src/check_city.py    точечная проверка одного города: python3 check_city.py chengdu 2026-08-03
+src/wx_daily.py      main scanner: station calibration, probabilities, combo
+                     construction, Kelly stake sizing, executable lots,
+                     portfolio check, verdict of the day
+src/watchdog.py      6-hourly watchdog: fresh large earthquakes, arbitrage
+                     signals in circuits #2 and #3
+src/check_city.py    spot-check one city: python3 check_city.py chengdu 2026-08-03
 
-web/weather_screener.html   автономный скринер температуры в браузере (48 городов)
-web/quake_screener.html     скринер рынков числа землетрясений (Пуассон против USGS)
-web/crypto_screener.html    скринер BTC/ETH above $K против опционов Deribit
+web/weather_screener.html   standalone browser screener, 48 cities
+web/quake_screener.html     earthquake-count screener (Poisson vs USGS)
+web/crypto_screener.html    BTC/ETH above-$K vs Deribit options surface
 
-docs/METHODOLOGY.md    как именно считается вероятность и размер ставки
-docs/OPEN_QUESTIONS.md вопросы, на которые я сам не уверен, что отвечаю правильно
-docs/JOURNAL.md        журнал реальных ставок и исходов
-docs/tasks/            промпты двух ежедневных задач, которые запускают систему
+docs/METHODOLOGY.md    how probabilities and stake sizes are actually computed
+docs/OPEN_QUESTIONS.md the places where I am not sure I'm right (start here)
+docs/JOURNAL.md        real bets and outcomes
+docs/tasks/            prompts of the two scheduled jobs that run the system
 ```
 
-HTML-файлы полностью автономны: скачал, открыл в браузере, нажал кнопку.
-Ни сервера, ни сборки, ни ключей не требуется. Python-скрипты — только стандартная
-библиотека, никаких зависимостей.
+The HTML files are fully self-contained: download, open in a browser, press
+the button. No server, no build step, no API keys. The Python scripts use the
+standard library only — zero dependencies.
 
-## Как это работает за минуту
+Docs are written in Russian (the project's working language). The code
+comments are Russian too; the code itself is short and readable regardless.
 
-1. **Станция.** У каждого рынка Polymarket в описании указана станция резолюции
-   («recorded at the Chengdu Shuangliu International Airport»). Считаем именно её,
-   а не «погоду в городе» — это половина преимущества, потому что толпа смотрит
-   прогноз для центра города.
-2. **Калибровка.** Берём METAR фактические максимумы станции за 10 дней и
-   архивные прогнозы ECMWF на те же дни. Средняя разница — систематическая
-   поправка станции, разброс разниц — мера доверия. Три тира: A, B, C.
-3. **Вероятность.** Суперансамбль ECMWF + GFS + ICON + GEM (143 члена),
-   к каждому члену прибавляем поправку, размазываем нормальным ядром и
-   интегрируем по границам бакета рынка.
-4. **Устойчивость.** Пересчитываем всё со сдвигом поправки на ±разброс.
-   Если преимущество выживает в обоих стрессовых сценариях — сигнал крепкий.
-5. **Размер.** Четверть Келли от банкролла по осторожной вероятности,
-   с потолком по дневному лимиту и по реальной глубине стакана.
-6. **Исполнение.** Обход стакана: сколько акций реально взять, по какой цене,
-   с учётом минимального ордера Polymarket в $1.
+## How it works in one minute
 
-Подробности — в `docs/METHODOLOGY.md`.
+1. **Resolution station.** Every Polymarket weather market names its
+   resolution station in the description ("recorded at Chengdu Shuangliu
+   International Airport"). We model that exact station — not "the city's
+   weather". This is half the edge, because the crowd looks at the
+   downtown forecast in a phone app.
+2. **Calibration.** Take the station's actual METAR daily maxima for the last
+   10 days and the archived ECMWF forecasts for the same days. The mean
+   difference is the station's systematic bias; the spread of differences is
+   the trust measure. Three trust tiers: A, B, C (tier C is not tradable).
+3. **Probability.** A 143-member super-ensemble (ECMWF + GFS + ICON + GEM),
+   each member shifted by the station bias, smoothed with a normal kernel,
+   integrated over the market's bucket boundaries.
+4. **Robustness.** Everything is recomputed with the bias shifted by ± its
+   own spread. A signal counts only if the edge survives both stress runs.
+5. **Sizing.** Quarter-Kelly on a conservative probability blend, capped by
+   the daily limit and by the real order-book depth.
+6. **Execution.** A book-walk computes executable lots per leg, honoring
+   Polymarket's $1 minimum order and rejecting legs where filling $1 would
+   cost over 1.5× the best ask (thin book).
+7. **Portfolio feedback.** The daily job reads open positions via the public
+   data API (read-only, wallet address only), computes the per-outcome payoff
+   table for every open event, tracks today's spend against the daily limit,
+   flags recommendations that conflict with held positions, and reminds about
+   unredeemed winnings.
 
-## Текущее состояние
+Details, formulas and thresholds: `docs/METHODOLOGY.md`.
 
-Банкролл $100, дневной лимит $15 — фаза проверки модели. Лимит поднимается
-до $25 только после 30 записанных ставок с подтверждённой точностью.
-Реальных резолюций пока мало, см. `docs/JOURNAL.md`.
+## Current state
 
-## Зачем этот репозиторий опубликован
+Bankroll $100, daily limit $15 — model-validation phase. The limit rises to
+$25 only after 30 journaled bets confirm the model's calibration. Very few
+resolutions so far; see `docs/JOURNAL.md` (the first one was a miss, which is
+duly recorded).
 
-Чтобы можно было дать ссылку другой модели и получить внешнюю критику
-методологии. Самые болезненные места я собрал в `docs/OPEN_QUESTIONS.md` —
-если вы это читаете и вас просили разобрать систему, начните оттуда.
+## Why this repository is public
+
+So that another model (or a human) can be given a link and asked to attack
+the methodology. The most painful spots are collected in
+`docs/OPEN_QUESTIONS.md` — ten specific questions with the failure modes I
+suspect. If you were asked to review this system, start there, and please
+respond with formulas and testable claims rather than generic advice.

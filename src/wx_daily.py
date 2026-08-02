@@ -196,6 +196,69 @@ def combo_lots(step, min_order=MIN_ORDER, thin_mult=1.5):
     return dict(lots=lots, skipped=skipped, total_usd=round(total, 2),
                 p_covered=round(sum(l["p"] for l in lots if l.get("p")), 3))
 
+PM_WALLET = ""  # публичный адрес кошелька Polymarket (0x...); пустой = блок портфеля выключен.
+                # В публичном репозитории всегда пусто — адрес живёт только в приватном тексте задачи.
+
+def _bucket_of(title):
+    m = re.search(r"(-?\d+(?:--?\d+)?°[CF](?: or (?:below|higher|above))?)", title or "")
+    return m.group(1) if m else (title or "?")
+
+def portfolio_scan(wallet=None):
+    """Портфель через открытый data-api Polymarket (по публичному адресу, без ключей):
+    открытые позиции, сгруппированные по событиям, с раскладом «что вернётся при каждом
+    исходе»; потрачено сегодня и остаток дневного лимита; выплаты, готовые к забору."""
+    wallet = wallet or PM_WALLET
+    if not wallet: return None
+    pos = get(f"https://data-api.polymarket.com/positions?user={wallet}")
+    try: value = round(float(get(f"https://data-api.polymarket.com/value?user={wallet}")[0]["value"]), 2)
+    except Exception: value = None
+    open_ev, redeem = {}, []
+    for p in pos:
+        row = dict(bucket=_bucket_of(p.get("title")), outcome=p.get("outcome"),
+                   shares=round(p.get("size", 0), 1), avg=round(p.get("avgPrice", 0), 3),
+                   cur=round(p.get("curPrice", 0), 3), cost=round(p.get("initialValue", 0), 2),
+                   payout=round(p.get("size", 0), 2))
+        if p.get("redeemable"):
+            if row["payout"] > 0.01:
+                redeem.append(dict(row, event=p.get("eventSlug"), pnl=round(p.get("cashPnl", 0), 2)))
+        elif row["shares"] > 0.01:
+            open_ev.setdefault(p.get("eventSlug"), []).append(row)
+    events = []
+    for slug, legs in open_ev.items():
+        spent = round(sum(l["cost"] for l in legs), 2)
+        scen = []
+        for b in [l["bucket"] for l in legs] + ["любой другой исход"]:
+            ret = sum(l["payout"] for l in legs
+                      if (l["outcome"] == "Yes") == (l["bucket"] == b))
+            scen.append(dict(если=b, чистыми=round(ret - spent, 2)))
+        events.append(dict(event=slug, spent=spent, legs=legs, scenarios=scen))
+    spent_today = 0.0
+    try:
+        midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        for a in get(f"https://data-api.polymarket.com/activity?user={wallet}&limit=100"):
+            if a.get("timestamp", 0) >= midnight and a.get("type") == "TRADE" and a.get("side") == "BUY":
+                spent_today += float(a.get("usdcSize") or 0)
+    except Exception: pass
+    redeem.sort(key=lambda r: -r["payout"])
+    return dict(value=value, spent_today=round(spent_today, 2),
+                day_left=round(max(0.0, DAY_LIMIT - spent_today), 2),
+                events=events, redeemable=redeem[:10], n_redeemable=len(redeem),
+                redeem_total=round(sum(r["payout"] for r in redeem), 2))
+
+def mark_held(picks, pf):
+    """Флаги на пиках: held — такая позиция уже есть; conflict — уже держим противоположную."""
+    if not pf: return
+    have = {}
+    for e in pf["events"]:
+        for l in e["legs"]:
+            have[(e["event"], l["bucket"])] = l["outcome"]
+    for t in picks:
+        slug_ev = t.get("link", "").rsplit("/", 1)[-1]
+        o = have.get((slug_ev, t.get("bucket")))
+        if o is None: continue
+        if (o == "Yes") == (t.get("side") == "YES"): t["held"] = True
+        else: t["conflict"] = True
+
 def check_coverage():
     """Есть ли на Polymarket погодные города вне нашего списка (нужно ли обновлять HTML)."""
     try:
@@ -590,6 +653,11 @@ def main():
     if series is not None:
         series = next((c for c in combo_top if c is series or (c["city"] == series["city"] and c["date"] == series["date"] and c["buckets"] == series["buckets"])), series)
     for c in combo_top: c.pop("tids", None)
+    try:
+        portfolio = portfolio_scan()
+        mark_held(picks, portfolio)
+    except Exception as e:
+        portfolio = None; errors.append(f"portfolio: {e}")
     try: quakes = quake_scan()
     except Exception as e:
         quakes = []; errors.append(f"quakes: {e}")
@@ -625,6 +693,7 @@ def main():
     print(json.dumps(dict(
         generated=now.strftime("%Y-%m-%d %H:%M UTC"),
         bankroll=BANKROLL, day_limit=DAY_LIMIT, min_order=MIN_ORDER,
+        portfolio=portfolio,
         verdicts=verdicts,
         calib_json=dict(cal_date=now.strftime("%Y-%m-%d"), cities=calib, cities_min=calib_min),
         picks=picks[:12], watch=watch[:10], chance_combos=combo_top[:10], series_pick=series,
