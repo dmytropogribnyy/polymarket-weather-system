@@ -293,7 +293,35 @@ function feeRateOf(v){ return v === null ? null : (v > 1 ? v/10000 : v); }
    и рынок не торгуется (fail-closed). */
 function parseMarketParams(m){
   if (!m || typeof m !== "object") return null;
-  const fee_rate = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
+  
+  // Читаем канонический fee schedule (feesEnabled + feeSchedule), если есть
+  let fee_rate = null;
+  if ("feesEnabled" in m) {
+    if (m.feesEnabled === false) {
+      fee_rate = 0.0;  // явно отключённые комиссии — валидное состояние
+    } else if (m.feesEnabled === true) {
+      const fs = m.feeSchedule;
+      if (fs && typeof fs === "object") {
+        const r = numOf(fs, ["rate"]);
+        const exp = numOf(fs, ["exponent"]);
+        const takerOnly = fs.takerOnly;
+        // Поддерживаем только exponent=1 (квадратичная кривая) и takerOnly=true
+        if (r !== null && (exp === null || exp === 1) && (takerOnly === undefined || takerOnly === true)) {
+          fee_rate = r;
+        } else {
+          return null;  // неподдерживаемый schedule → NO BET
+        }
+      } else {
+        return null;  // feesEnabled=true без feeSchedule → NO BET
+      }
+    }
+  }
+  
+  // Если canonical отсутствует, пробуем legacy
+  if (fee_rate === null) {
+    fee_rate = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
+  }
+  
   const tick = numOf(m, ["minimum_tick_size","orderPriceMinTickSize","mts","tickSize"]);
   const min_notional = numOf(m, ["minimum_order_size","orderMinSize","mos","minimumOrderSize"]);
   const min_shares = numOf(m, ["minimum_order_size_shares","minSharesSize","minimumOrderShares"]) || 0;

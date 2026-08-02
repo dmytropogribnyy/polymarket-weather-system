@@ -213,9 +213,13 @@ def _fee_rate(v):
     return v/10000.0 if v > 1 else float(v)
 
 def _fee_rate_canonical(m):
-    """Каноническое расписание комиссий: feesEnabled + feeSchedule.rate.
+    """Каноническое расписание комиссий: feesEnabled + feeSchedule (rate, exponent, takerOnly).
     Возвращает (ставка, is_canonical). Если feesEnabled отсутствует — (None, False).
-    Если feesEnabled=True, а расписание не читается — (None, True) → fail-closed."""
+    Если feesEnabled=True, а расписание не читается или содержит неподдерживаемые
+    значения — (None, True) → fail-closed.
+    
+    Поддерживаемая модель: rate×price^exponent×(1−price)^exponent, exponent=1 (стандартная
+    квадратичная кривая), takerOnly=True (одинаковая комиссия тейкера/мейкера не поддерживается)."""
     fees_enabled = m.get("feesEnabled")
     if fees_enabled is None:
         return None, False
@@ -224,7 +228,20 @@ def _fee_rate_canonical(m):
     schedule = m.get("feeSchedule") or {}
     rate = _num(schedule, "rate")
     if rate is None:
-        return None, True                    # включено, но расписание отсутствует
+        return None, True                    # включено, но rate отсутствует
+    # Проверяем exponent: если присутствует, обязан быть 1 (квадратичная кривая)
+    exponent = schedule.get("exponent")
+    if exponent is not None:
+        try:
+            exp_val = float(exponent)
+            if abs(exp_val - 1.0) > 1e-9:
+                return None, True            # неподдерживаемый exponent
+        except (TypeError, ValueError):
+            return None, True                # битый exponent
+    # Проверяем takerOnly: если присутствует, обязан быть True
+    taker_only = schedule.get("takerOnly")
+    if taker_only is not None and not taker_only:
+        return None, True                    # takerOnly=False не поддерживается
     return float(rate), True
 
 def parse_market_params(m):
@@ -546,6 +563,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
 
     1. по каждой ноге считаем МИНИМАЛЬНЫЙ исполнимый лот по правилам рынка
        (минимальный ордер, минимальное число акций, обход книги, комиссии);
+       ОБЯЗАТЕЛЬНО читаем min_order_size и tick_size из ФАКТИЧЕСКОГО ответа книги;
     2. тонкие ноги (средняя цена дороже thin_mult×аска) выбрасываем;
     3. если минимальных лотов меньше двух — НЕ СТАВИМ;
     4. если сумма минимальных лотов больше запрошенной ставки или больше
@@ -571,17 +589,42 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         try:
             book = fetch(f"https://clob.polymarket.com/book?token_id={tid}")
             levels = sorted((float(a["price"]), float(a["size"])) for a in book.get("asks", []))
+            # Читаем ОБЯЗАТЕЛЬНЫЕ метаданные из фактической книги
+            book_min_shares = _num(book, "min_order_size", "minimum_order_size")
+            book_tick = _num(book, "tick_size", "minimum_tick_size")
+            if book_min_shares is None or book_tick is None:
+                skipped.append(dict(bucket=b, why="книга не содержит обязательные метаданные (min_order_size/tick_size)"))
+                continue
+            # Валидируем метаданные
+            if book_min_shares < 0 or book_min_shares > 10000:
+                skipped.append(dict(bucket=b, why=f"книга: min_order_size={book_min_shares} вне санитарных границ"))
+                continue
+            if book_tick <= 0 or book_tick > TICK_MAX:
+                skipped.append(dict(bucket=b, why=f"книга: tick_size={book_tick} вне санитарных границ"))
+                continue
+            # Проверяем, что цены в levels соответствуют объявленному tick
+            for price, size in levels:
+                tick_mismatch = abs(price - round(price / book_tick) * book_tick)
+                if tick_mismatch > 1e-9:
+                    skipped.append(dict(bucket=b, why=f"книга: цена {price} не кратна tick_size={book_tick}"))
+                    break
+            else:
+                # Все цены валидны, используем бо́льшее из CLOB min_shares
+                leg_min_shares = max(mp.min_shares, book_min_shares)
+                got = _walk_book(levels, mp._replace(min_shares=leg_min_shares), leg_min_shares, cap)
+                if got is None:
+                    skipped.append(dict(bucket=b, why=f"в книге нет объёма даже на минимальный ордер ${mp.min_notional:g} / {leg_min_shares} акций"))
+                    continue
+                sh, usd, lim = got
+                eff = float(usd/sh)
+                if eff > thin_mult*allin(ask, mp):
+                    skipped.append(dict(bucket=b, why=f"тонкая книга: средняя {eff*100:.1f}¢ против аска {ask*100:.1f}¢"))
+                    continue
+                legs.append(dict(bucket=b, ask=ask, tid=tid, p=pp, levels=levels,
+                                 min_shares=sh, min_usd=usd, limit=lim, book_min_shares=leg_min_shares))
         except Exception:
-            skipped.append(dict(bucket=b, why="книга недоступна")); continue
-        got = _walk_book(levels, mp, mp.min_shares, cap)
-        if got is None:
-            skipped.append(dict(bucket=b, why=f"в книге нет объёма даже на минимальный ордер ${mp.min_notional:g}")); continue
-        sh, usd, lim = got
-        eff = float(usd/sh)
-        if eff > thin_mult*allin(ask, mp):
-            skipped.append(dict(bucket=b, why=f"тонкая книга: средняя {eff*100:.1f}¢ против аска {ask*100:.1f}¢")); continue
-        legs.append(dict(bucket=b, ask=ask, tid=tid, p=pp, levels=levels,
-                         min_shares=sh, min_usd=usd, limit=lim))
+            skipped.append(dict(bucket=b, why="книга недоступна"))
+            continue
     base = dict(lots=[], skipped=skipped, total_usd=0.0, min_usd=float(sum((l["min_usd"] for l in legs), Decimal("0"))),
                 p_covered=0.0, ev_final=None, stake=round(stake, 2),
                 budget_left=round(budget_left, 2), ok=False)
@@ -598,7 +641,8 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
     for i, l in enumerate(legs):
         rest_min = sum((x["min_usd"] for x in legs[i+1:]), Decimal("0"))
         allow = cap - running - rest_min
-        got = _walk_book(l["levels"], mp, target, allow)
+        leg_mp = mp._replace(min_shares=l["book_min_shares"])
+        got = _walk_book(l["levels"], leg_mp, target, allow)
         if got is None:                                  # минимум уже проверен выше
             sh, usd, lim = l["min_shares"], l["min_usd"], l["limit"]
         else:
@@ -676,12 +720,57 @@ def check_arb_legs(legs, mp, fetch=None):
         return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_notional:g} по каждой ноге")
     return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
+def single_lot(pick, mp, budget_left, fetch=None):
+    """Исполнимый лот для одиночной рекомендации. Проверяет реальную книгу,
+    минимальное число акций, минимальный нотионал и fee-inclusive economics.
+    Возвращает dict(ok, shares, usd, reason)."""
+    fetch = fetch or get
+    token_id = pick.get("token_id")
+    ask = pick.get("ask")
+    if not token_id or not ask:
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason="нет token_id или ask для одиночной рекомендации")
+    try:
+        book = fetch(f"https://clob.polymarket.com/book?token_id={token_id}")
+        levels = sorted((float(a["price"]), float(a["size"])) for a in book.get("asks", []))
+        book_min_shares = _num(book, "min_order_size", "minimum_order_size")
+        book_tick = _num(book, "tick_size", "minimum_tick_size")
+        if book_min_shares is None or book_tick is None:
+            return dict(ok=False, shares=0.0, usd=0.0,
+                       reason="книга не содержит обязательные метаданные")
+        if book_min_shares < 0 or book_min_shares > 10000:
+            return dict(ok=False, shares=0.0, usd=0.0,
+                       reason=f"book min_order_size={book_min_shares} вне границ")
+        if book_tick <= 0 or book_tick > TICK_MAX:
+            return dict(ok=False, shares=0.0, usd=0.0,
+                       reason=f"book tick_size={book_tick} вне границ")
+    except Exception as e:
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason=f"книга недоступна: {str(e)[:40]}")
+    
+    # Используем бо́льшее из двух минимумов акций
+    leg_min_shares = max(mp.min_shares, book_min_shares)
+    cap = _cents(min(pick.get("stake", 0), budget_left), rounding=ROUND_DOWN)
+    
+    # Пытаемся набрать минимальный исполнимый лот
+    leg_mp = mp._replace(min_shares=leg_min_shares)
+    got = _walk_book(levels, leg_mp, leg_min_shares, cap)
+    if got is None:
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares} акций")
+    
+    sh, usd, lim = got
+    return dict(ok=True, shares=float(sh), usd=float(_cents(usd)), limit=lim,
+               reason=None)
+
+
 def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
     """Единый проход по ВСЕМ погодным кандидатам одного прогона.
 
     * порядок приоритета детерминированный, ограничения «только первые шесть»
       нет: каждый кандидат либо одобрен, либо ЯВНО отклонён с причиной;
     * комбо получает BET только после расчёта исполнимых лотов;
+    * одиночные рекомендации проходят ПОЛНУЮ валидацию книги и исполнимости;
     * бюджет резервируется в общем распределителе сразу — следующий кандидат
       видит уже уменьшенный остаток и не может потратить те же деньги;
     * максимумы, минимумы, серия и одиночные ставки ходят в один распределитель.
@@ -720,15 +809,51 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
     for t in sorted(picks, key=lambda t: -t.get("conf", 0)*t.get("ev", 0)):
         want = t.get("stake") or 0.0
         mp_t = t.get("mp")
-        t_min_notional = mp_t.min_notional if mp_t else allocator.min_notional
-        if want < t_min_notional:
-            t["stake"] = 0.0
-            t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
-                                 f"ордера этого рынка ${t_min_notional:.2f}")
-            continue
-        granted = allocator.reserve(t.get("date"), want, tag=f"single:{t.get('city')}:{t.get('date')}") if want else 0.0
-        t["stake"] = granted
-        if granted <= 0: t["budget_block"] = "бюджет даты исчерпан"
+        wdate = t.get("date")
+        
+        if mp_t is None:
+            # Без mp используем allocator floor
+            t_min_notional = allocator.min_notional
+            if want < t_min_notional:
+                t["stake"] = 0.0
+                t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
+                                    f"ордера ${t_min_notional:.2f} (mp отсутствует)")
+                continue
+            # Резервируем без валидации книги (fail-open для совместимости)
+            granted = allocator.reserve(wdate, want, tag=f"single:{t.get('city')}:{wdate}") if want else 0.0
+            t["stake"] = granted
+            if granted <= 0: t["budget_block"] = "бюджет даты исчерпан"
+        else:
+            # С mp выполняем ПОЛНУЮ валидацию через реальную книгу
+            t_min_notional = mp_t.min_notional
+            if want < t_min_notional:
+                t["stake"] = 0.0
+                t["budget_block"] = (f"рекомендуемая ставка ${want:.2f} ниже минимального "
+                                    f"ордера этого рынка ${t_min_notional:.2f}")
+                continue
+            
+            left = allocator.remaining(wdate)
+            if left < t_min_notional:
+                t["stake"] = 0.0
+                t["budget_block"] = f"бюджет на {wdate} исчерпан: осталось ${left:.2f}"
+                continue
+            
+            # Валидируем исполнимость через реальную книгу
+            exec_result = single_lot(t, mp_t, left, fetch)
+            if not exec_result.get("ok"):
+                t["stake"] = 0.0
+                t["budget_block"] = exec_result.get("reason", "неисполнимая книга")
+                continue
+            
+            # Исполнимо — резервируем
+            exec_usd = exec_result["usd"]
+            granted = allocator.reserve(wdate, exec_usd, tag=f"single:{t.get('city')}:{wdate}")
+            if granted + 1e-9 < exec_usd:
+                t["stake"] = 0.0
+                t["budget_block"] = f"остаток бюджета ${granted:.2f} < исполнимая сумма ${exec_usd:.2f}"
+            else:
+                t["stake"] = granted
+                t["exec"] = exec_result
     return approved
 
 PM_WALLET = ""  # публичный адрес кошелька Polymarket (0x...); пустой = блок портфеля выключен.

@@ -38,8 +38,14 @@ def _book_fetch(books):
     def fetch(url):
         tid = url.split("token_id=")[-1]
         if tid not in books:
-            raise AssertionError(f"кейс не описывает книгу {tid}")
-        return dict(asks=[dict(price=p, size=s) for p, s in books[tid]])
+            # Простая ошибка без деталей, как при реальной сети
+            raise RuntimeError("book not found")
+        # Добавляем обязательные метаданные стакана для fail-closed валидации
+        return dict(
+            asks=[dict(price=p, size=s) for p, s in books[tid]],
+            min_order_size="1",
+            tick_size="0.01"
+        )
     return fetch
 
 

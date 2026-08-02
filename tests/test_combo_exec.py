@@ -8,7 +8,14 @@ MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, min_shares=0.0, 
 
 
 def books(**per_token):
-    return FakeFetch({f"token_id={t}": book(levels) for t, levels in per_token.items()})
+    """Создаёт FakeFetch со стаканами + обязательными метаданными."""
+    routes = {}
+    for t, levels in per_token.items():
+        b = book(levels)
+        b["min_order_size"] = "1"
+        b["tick_size"] = "0.01"
+        routes[f"token_id={t}"] = b
+    return FakeFetch(routes)
 
 
 class TestDecimalBoundary(unittest.TestCase):

@@ -83,13 +83,29 @@ def _fee_rate(v):
     return v/10000.0 if v > 1 else float(v)
 
 def _fee_rate_canonical(m):
-    """Каноническое расписание комиссий: feesEnabled + feeSchedule.rate."""
+    """Каноническое расписание комиссий: feesEnabled + feeSchedule (rate, exponent, takerOnly).
+    Возвращает (ставка, is_canonical). Если feesEnabled отсутствует — (None, False).
+    Если feesEnabled=True, а расписание не читается или содержит неподдерживаемые
+    значения — (None, True) → fail-closed.
+    
+    Поддерживаемая модель: rate×price^exponent×(1−price)^exponent, exponent=1 (стандартная
+    квадратичная кривая), takerOnly=True (одинаковая комиссия тейкера/мейкера не поддерживается)."""
     fees_enabled = m.get("feesEnabled")
     if fees_enabled is None: return None, False
     if not fees_enabled: return 0.0, True
     schedule = m.get("feeSchedule") or {}
     rate = _num(schedule, "rate")
     if rate is None: return None, True
+    # Проверяем exponent: если присутствует, обязан быть 1 (квадратичная кривая)
+    exponent = schedule.get("exponent")
+    if exponent is not None:
+        try:
+            exp_val = float(exponent)
+            if abs(exp_val - 1.0) > 1e-9: return None, True
+        except (TypeError, ValueError): return None, True
+    # Проверяем takerOnly: если присутствует, обязан быть True
+    taker_only = schedule.get("takerOnly")
+    if taker_only is not None and not taker_only: return None, True
     return float(rate), True
 
 def parse_market_params(m):

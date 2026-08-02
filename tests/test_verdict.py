@@ -8,7 +8,14 @@ MP = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, min_shares=0.0, 
 
 
 def deep_books(*tids):
-    return FakeFetch({f"token_id={t}": book([(0.10, 100000), (0.11, 100000)]) for t in tids})
+    """Глубокие стаканы для указанных токенов с обязательными метаданными."""
+    routes = {}
+    for t in tids:
+        b = book([(0.10, 100000), (0.11, 100000)])
+        b["min_order_size"] = "1"
+        b["tick_size"] = "0.01"
+        routes[f"token_id={t}"] = b
+    return FakeFetch(routes)
 
 
 def wx_combo(city="Чэнду", date="2026-08-03", stake=4.0, tids=("a", "b"), **kw):
@@ -125,9 +132,20 @@ class TestPlanWeather(unittest.TestCase):
         """Ставка точно равная минимуму рынка — выдаётся."""
         mp5 = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=5.0,
                              min_shares=0.0, source="test")
-        pick = dict(city="Чэнду", date="2026-08-03", stake=5.0, conf=4, ev=0.20, mp=mp5)
+        pick = dict(city="Чэнду", date="2026-08-03", stake=5.0, conf=4, ev=0.20, mp=mp5,
+                    token_id="tok-chengdu", ask=0.30)
         alloc = w.BudgetAllocator()
-        w.plan_weather([], [pick], alloc)
+        
+        # Provide deep book with metadata
+        fetch = FakeFetch({
+            "book?token_id=tok-chengdu": dict(
+                asks=[{"price": "0.30", "size": "1000"}],
+                min_order_size="1",
+                tick_size="0.01"
+            )
+        })
+        
+        w.plan_weather([], [pick], alloc, fetch=fetch)
         self.assertGreater(pick["stake"], 0.0)
 
     def test_single_pick_without_mp_uses_allocator_floor(self):
