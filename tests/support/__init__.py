@@ -24,10 +24,12 @@ def market(**kw):
     return m
 
 
-def book(levels):
-    """Стакан CLOB: [(цена, размер)] -> {"asks": [...]}"""
+def book(levels, min_order_size=1.0, tick_size=0.01):
+    """Стакан CLOB: [(цена, размер)] -> {"asks": [...], "min_order_size": ..., "tick_size": ...}"""
     return {"asks": [{"price": str(p), "size": str(s)} for p, s in levels],
-            "bids": []}
+            "bids": [],
+            "min_order_size": str(min_order_size),
+            "tick_size": str(tick_size)}
 
 
 class FakeFetch:

@@ -96,6 +96,25 @@ class ExecutableArbTest(unittest.TestCase):
         self.assertEqual(r["exec_sets"], 40)
         self.assertGreater(r["exec_profit"], 0)
 
+    def test_arb_rejects_missing_book_metadata(self):
+        # Книга без min_order_size или tick_size → NO BET
+        bad_book = {"asks": [{"price": "0.40", "size": "50"}]}  # отсутствуют метаданные
+        f = FakeFetch({"book?token_id=a": bad_book,
+                       "book?token_id=b": book([(0.50, 40)])})
+        r = wd.check_arb_legs([("a", 0.40), ("b", 0.50)], self.MP, f)
+        self.assertFalse(r["ok"])
+        self.assertIn("метаданных", r["why"])
+
+    def test_arb_rejects_invalid_book_metadata(self):
+        # Книга с некорректными метаданными → NO BET
+        invalid_book = {"asks": [{"price": "0.40", "size": "50"}],
+                       "min_order_size": "999", "tick_size": "0.01"}
+        f = FakeFetch({"book?token_id=a": invalid_book,
+                       "book?token_id=b": book([(0.50, 40)])})
+        r = wd.check_arb_legs([("a", 0.40), ("b", 0.50)], self.MP, f)
+        self.assertFalse(r["ok"])
+        self.assertIn("некорректный", r["why"])
+
 
 if __name__ == "__main__":
     unittest.main()

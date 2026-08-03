@@ -199,6 +199,18 @@ def check_arb_legs(legs, mp, fetch=None):
         try:
             book = fetch(f"https://clob.polymarket.com/book?token_id={tid}")
             asks = sorted((float(a["price"]), float(a["size"])) for a in book.get("asks", []))
+            # Валидируем метаданные книги
+            book_min_order = _num(book, "min_order_size", "minimum_order_size")
+            book_tick = _num(book, "tick_size", "minimum_tick_size")
+            if book_min_order is None or book_tick is None:
+                return dict(ok=False, why="книга без метаданных min_order_size/tick_size",
+                           exec_sets=0, exec_profit=0.0)
+            if book_min_order < 0 or book_min_order > MIN_ORDER_MAX:
+                return dict(ok=False, why=f"некорректный book min_order_size={book_min_order}",
+                           exec_sets=0, exec_profit=0.0)
+            if book_tick <= 0 or book_tick > TICK_MAX:
+                return dict(ok=False, why=f"некорректный book tick_size={book_tick}",
+                           exec_sets=0, exec_profit=0.0)
         except Exception:
             return dict(ok=False, why="книга недоступна", exec_sets=0, exec_profit=0.0)
         if not asks:
