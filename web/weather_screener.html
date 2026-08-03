@@ -542,16 +542,36 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     }
     // book.min_order_size — это минимум в акциях (shares), не USDC
     // mp.min_notional — минимум в USDC, mp.min_shares — минимум в акциях
+    // Правильно: держим их раздельно и используем max для акций, не для нотионала
+    const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
     const leg_mp = Object.assign({}, mp, { 
-      min_shares: Math.max(mp.min_shares || 0, book.min_order_size)
+      min_shares: leg_min_shares
     });
     // Проверяем, что цена совместима с тиком
     if (Math.abs(Math.round(ask / book.tick_size) * book.tick_size - ask) > EPS_M){
       skipped.push({ bucket: b, why: `цена ${ask} несовместима с tick ${book.tick_size}` });
       continue;
     }
+    // Проверяем совместимость mp.tick (Gamma) и book.tick_size (CLOB)
+    if (mp.tick != null && book.tick_size != null){
+      if (Math.abs(mp.tick - book.tick_size) > EPS_M){
+        skipped.push({ bucket: b, why: `несовместимые тики: Gamma tick=${mp.tick} vs книга tick_size=${book.tick_size}` });
+        continue;
+      }
+    }
     const levels = book.levels || [];
+    // Проверяем, что все цены в levels соответствуют объявленному tick
     const sorted = levels.slice().sort((a,z) => a[0]-z[0]);
+    let tickMismatch = false;
+    for (const lv of sorted){
+      const price = +lv[0];
+      if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M){
+        skipped.push({ bucket: b, why: `книга: цена ${price} не кратна tick_size=${book.tick_size}` });
+        tickMismatch = true;
+        break;
+      }
+    }
+    if (tickMismatch) continue;
     const got = walkBook(sorted, leg_mp, leg_mp.min_shares || 0, cap);
     if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${leg_mp.min_notional}` }); continue; }
     const eff = got.usd/got.sh;
@@ -589,21 +609,28 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     const ask = lot.ask;
     const full_price = ask + mp.fee_rate * ask * (1 - ask);
     const usd_from_rounded = sh_rounded * full_price;
-    // Update lot with rounded values
+    // Store RAW usd for total calculation, but rounded shares
     lot.shares = sh_rounded;
-    lot.usd = centsUp(usd_from_rounded);
+    lot.usd_raw_rounded = usd_from_rounded;  // RAW for comparison
+    lot.usd = centsUp(usd_from_rounded);     // Rounded for display
     lot.payout = sh_rounded;
     delete lot.shares_raw;
     delete lot.usd_raw;
   }
   
-  // Recompute total from rounded shares
-  const total_from_rounded = lots.reduce((s,l) => s + l.usd, 0);
+  // Recompute total from RAW usd values (before rounding), not from rounded usd
+  const total_from_rounded = lots.reduce((s,l) => s + l.usd_raw_rounded, 0);
   
-  // Verify recomputed total doesn't exceed cap
-  if (total_from_rounded > cap + 0.01){  // Allow 1 cent tolerance for rounding
-    return fail(`после округления акций исполнимая стоимость $${total_from_rounded.toFixed(2)} превышает доступное $${cap.toFixed(2)}`);
+  // Verify recomputed total doesn't exceed cap - NO TOLERANCE
+  // Compare raw execution cost to raw cap before presentation rounding
+  if (total_from_rounded > cap + EPS_M){
+    // Preserve min_usd by reconstructing legs with min_usd for fail function
+    const legs_for_fail = legs.map(l => ({ min_usd: l.min_usd }));
+    return fail(`после округления акций исполнимая стоимость $${total_from_rounded.toFixed(2)} превышает доступное $${cap.toFixed(2)}`, legs_for_fail);
   }
+  
+  // Clean up temporary fields
+  for (const lot of lots) delete lot.usd_raw_rounded;
   
   const total = centsUp(total_from_rounded);
   const expPay = lots.reduce((s,l) => s + (l.p || 0)*l.payout, 0);
@@ -640,7 +667,7 @@ function approveCombo(ex, budgetLeft, minEv, minLegs){
 function checkArbLegs(legs, mp, books){
   let sets = null, cost = 0;
   const legData = [];  // Store per-leg data including book min requirements
-  for (const [tid] of legs){
+  for (const [tid, quotedPrice] of legs){
     if (!tid) return { ok: false, why: "нет идентификатора книги", exec_sets: 0, exec_profit: 0 };
     const book = books ? books[tid] : null;
     if (!book) return { ok: false, why: "книга недоступна", exec_sets: 0, exec_profit: 0 };
@@ -649,9 +676,25 @@ function checkArbLegs(legs, mp, books){
       return { ok: false, why: "книга без метаданных min_order_size/tick_size", exec_sets: 0, exec_profit: 0 };
     if (!(book.min_order_size > 0) || !(book.tick_size > 0))
       return { ok: false, why: "некорректные метаданные книги", exec_sets: 0, exec_profit: 0 };
+    // Проверяем совместимость mp.tick и book.tick_size
+    if (mp.tick != null && book.tick_size != null){
+      if (Math.abs(mp.tick - book.tick_size) > EPS_M)
+        return { ok: false, why: `несовместимые тики: Gamma=${mp.tick} vs книга=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
     const levels = book.levels || [];
     if (!levels.length) return { ok: false, why: "пустая книга", exec_sets: 0, exec_profit: 0 };
     const asks = levels.slice().sort((a,z) => a[0]-z[0]);
+    // Проверяем, что все цены в levels соответствуют tick
+    for (const lv of asks){
+      const price = +lv[0];
+      if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
+        return { ok: false, why: `книга: цена ${price} не кратна tick=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
+    // Проверяем, что котируемая цена (если есть) совместима с tick
+    if (quotedPrice != null){
+      if (Math.abs(quotedPrice - Math.round(quotedPrice / book.tick_size) * book.tick_size) > EPS_M)
+        return { ok: false, why: `котируемая цена ${quotedPrice} не кратна tick=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
     const price = +asks[0][0], size = +asks[0][1];
     cost += allin(price, mp);
     sets = sets === null ? size : Math.min(sets, size);

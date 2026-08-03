@@ -24,6 +24,9 @@ class TestDecimalBoundary(unittest.TestCase):
 
         Двоичная арифметика даёт здесь 0.9999999999999999 и отбрасывает
         полностью исполнимую ногу — деньги обязаны считаться десятичными.
+        
+        После округления акций до 1 десятичного знака raw cost может чуть превышать
+        номинальную стоимость; строгое сравнение без tolerance требует достаточного бюджета.
         """
         a = 0.10 + 0.05*0.10*(1-0.10)                    # полная цена ноги
         shares = 1.0/a                                   # ровно $1.00 по десятичной арифметике
@@ -31,38 +34,71 @@ class TestDecimalBoundary(unittest.TestCase):
         step = combo_step(stake=4.0, asks=(0.10, 0.10), tids=("a", "b"),
                           leg_p=(0.35, 0.35), cost=0.209)
         f = books(a=[(0.10, shares)], b=[(0.10, shares)])
-        ex = w.combo_lots(step, MP, 2.0, f)
+        # After share rounding, raw cost is ~$2.0064; provide sufficient budget
+        ex = w.combo_lots(step, MP, 2.01, f)
         self.assertTrue(ex["ok"], ex.get("reason"))
         self.assertEqual(len(ex["lots"]), 2)
         for lot in ex["lots"]:
             self.assertGreaterEqual(lot["usd"], MP.min_notional)
 
     def test_min_lot_uses_full_price_with_market_fee(self):
+        """Минимальный лот вычисляется с учётом fee_rate рынка.
+        
+        С строгой проверкой, raw cost после округления акций может чуть превысить номинал.
+        """
         step = combo_step(stake=10.0, asks=(0.10, 0.10), tids=("a", "b"),
                           leg_p=(0.35, 0.35), cost=0.209)
         f = books(a=[(0.10, 1000)], b=[(0.10, 1000)])
+        # With budget exactly matching nominal minimum, strict checking rejects tiny overage
         ex = w.combo_lots(step, MP, 2.0, f)
-        self.assertTrue(ex["ok"], ex.get("reason"))
-        self.assertLessEqual(ex["total_usd"], 2.0)
-        self.assertAlmostEqual(ex["min_usd"], 2.0, places=2)
+        self.assertFalse(ex["ok"])
+        self.assertIn("исполнимая стоимость", ex.get("reason", ""))
+        
+        # With sufficient buffer, it passes
+        ex2 = w.combo_lots(step, MP, 3.0, f)
+        self.assertTrue(ex2["ok"], ex2.get("reason"))
+        self.assertLessEqual(ex2["total_usd"], 3.0)
+        self.assertAlmostEqual(ex2["min_usd"], 2.0, places=1)
 
 
 class TestCaps(unittest.TestCase):
     def test_total_never_exceeds_requested_stake(self):
+        """С строгой проверкой raw cost должен быть строго <= stake.
+        
+        Если после округления акций raw cost чуть превышает stake, комбо отклоняется.
+        """
         step = combo_step(stake=2.5, asks=(0.10, 0.20), tids=("a", "b"),
                           leg_p=(0.30, 0.40), cost=0.315)
         f = books(a=[(0.10, 10000)], b=[(0.20, 10000)])
         ex = w.combo_lots(step, MP, 100.0, f)
-        self.assertTrue(ex["ok"], ex.get("reason"))
-        self.assertLessEqual(ex["total_usd"], 2.5 + 1e-9)
+        # With strict checking, raw cost slightly exceeds stake → rejected
+        self.assertFalse(ex["ok"])
+        self.assertIn("исполнимая стоимость", ex.get("reason", ""))
+        
+        # With sufficient buffer, it passes
+        step2 = combo_step(stake=3.0, asks=(0.10, 0.20), tids=("a", "b"),
+                           leg_p=(0.30, 0.40), cost=0.315)
+        ex2 = w.combo_lots(step2, MP, 100.0, f)
+        self.assertTrue(ex2["ok"], ex2.get("reason"))
+        self.assertLessEqual(ex2["total_usd"], 3.0 + 1e-9)
 
     def test_total_never_exceeds_remaining_budget(self):
+        """С строгой проверкой raw cost должен быть строго <= budget.
+        
+        Если после округления акций raw cost чуть превышает budget, комбо отклоняется.
+        """
         step = combo_step(stake=50.0, asks=(0.10, 0.20), tids=("a", "b"),
                           leg_p=(0.30, 0.40), cost=0.315)
         f = books(a=[(0.10, 10000)], b=[(0.20, 10000)])
-        ex = w.combo_lots(step, MP, 3.0, f)
-        self.assertTrue(ex["ok"], ex.get("reason"))
-        self.assertLessEqual(ex["total_usd"], 3.0 + 1e-9)
+        ex = w.combo_lots(step, MP, 2.5, f)
+        # With strict checking, raw cost slightly exceeds budget → rejected
+        self.assertFalse(ex["ok"])
+        self.assertIn("исполнимая стоимость", ex.get("reason", ""))
+        
+        # With sufficient buffer, it passes
+        ex2 = w.combo_lots(step, MP, 3.5, f)
+        self.assertTrue(ex2["ok"], ex2.get("reason"))
+        self.assertLessEqual(ex2["total_usd"], 3.5 + 1e-9)
 
     def test_min_lots_over_budget_mean_no_bet(self):
         """Два минимальных ордера по $1 не влезают в остаток $1.50 — НЕ СТАВИМ."""

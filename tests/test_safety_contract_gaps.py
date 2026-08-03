@@ -26,10 +26,15 @@ class ShareRoundingGapTest(unittest.TestCase):
     def test_web_parity_rounded_shares_can_exceed_raw_cap(self):
         """Web comboLots with shares rounded to 0.1 can return total_usd that when
         executed with the returned shares exceeds the cap."""
-        # This test will extract and run the actual web PARITY-CORE
-        # For now, we document the reproduction case
-        # The fix must: normalize shares to executable precision BEFORE final totals/EV/verdict
-        pass  # Will be implemented with JS extraction
+        # The scenario from review: two 30¢ legs with fee_rate=0.05, min_notional=0.745,
+        # one book level of 2.4 shares, cap $1.49
+        # Web returns ok:true, total_usd=1.49, shares=2.4 per leg
+        # But executing 2.4 shares per leg costs: 2 × 2.4 × (0.30 + 0.05×0.30×0.70) = $1.4904 > $1.49
+        # centsUp(1.4904) = $1.49, but the RAW cost is above cap
+        
+        # For now, document the requirement: the fix must compare raw execution cost
+        # to raw cap before presentation rounding
+        pass  # Web parity test will be added with actual JS extraction
     
     def test_python_combo_lots_raw_shares_must_match_reported_total(self):
         """Python combo_lots: if shares are rounded for reporting, the actual executable
@@ -37,10 +42,7 @@ class ShareRoundingGapTest(unittest.TestCase):
         # Scenario: 2 legs, each with 2.4 shares at ask=0.30, fee_rate=0.05
         # Raw cost per leg: 2.4 * (0.30 + 0.05*0.30*0.70) = 2.4 * 0.315 = 0.756
         # Total raw: 1.512 > cap 1.49
-        # But if we round 0.756 to $0.76 (up), total becomes 2*0.76 = 1.52, still > 1.49
-        # If we round to $0.75 (down), total becomes 1.50, still > 1.49
-        # The issue: combo_lots returns shares=2.4 (rounded to 1 decimal) but doesn't
-        # verify that executing those shares stays within cap
+        # The current implementation allows this because it uses a 1 cent tolerance
         
         def fake_fetch(url):
             return {
@@ -49,7 +51,8 @@ class ShareRoundingGapTest(unittest.TestCase):
                 "tick_size": 0.01
             }
         
-        mp = wx_daily.MarketParams(fee_rate=0.05, tick=0.01, min_notional=0.745, 
+        # Use min_notional=0.70 so that 2*0.70 = 1.40 < 1.49 cap
+        mp = wx_daily.MarketParams(fee_rate=0.05, tick=0.01, min_notional=0.70, 
                                     min_shares=1.0, source="test")
         step = {
             "buckets": ["A", "B"],
@@ -62,22 +65,14 @@ class ShareRoundingGapTest(unittest.TestCase):
         
         result = wx_daily.combo_lots(step, mp, budget_left=1.49, fetch=fake_fetch)
         
-        # If ok=True, verify that executing the returned shares doesn't exceed cap
-        if result.get("ok"):
-            lots = result.get("lots", [])
-            total_exec_cost = 0.0
-            for lot in lots:
-                # Recompute cost from returned shares
-                shares = lot["shares"]
-                ask = lot["ask"]
-                # Full price including fee
-                full_price = ask + mp.fee_rate * ask * (1 - ask)
-                exec_cost = shares * full_price
-                total_exec_cost += exec_cost
-            
-            # The executed cost must not exceed the cap
-            self.assertLessEqual(total_exec_cost, 1.49 + 1e-9,
-                                f"Executable cost ${total_exec_cost:.4f} exceeds cap $1.49")
+        # This should be rejected because raw execution cost exceeds cap
+        # 2.4 * 0.315 * 2 = 1.512 > 1.49
+        self.assertFalse(result.get("ok"), 
+                        f"Should reject combo when raw execution cost exceeds cap, got result: {result}")
+        if not result.get("ok"):
+            reason = result.get("reason", "").lower()
+            self.assertTrue("превышает" in reason or "exceeds" in reason or "округления" in reason,
+                           f"Reason should mention exceeds or rounding, got: {result.get('reason')}")
     
     def test_budget_allocator_must_reserve_exact_executable_debit(self):
         """BudgetAllocator.reserve() and single_lot() must not round down the reserved

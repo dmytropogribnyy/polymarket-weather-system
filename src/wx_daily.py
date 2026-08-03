@@ -558,8 +558,8 @@ def _walk_book(levels, mp, target_shares, usd_cap):
             if take <= 0: break
         sh += take; usd += a*take; lim = price
         if sh >= want_sh and usd >= min_notional_rounded: break
-    # Финальная проверка: точное сравнение без округления, но с малым допуском
-    # для артефактов преобразования float→Decimal (нога ровно на $1.00 обязана пройти)
+    # Финальная проверка: точное сравнение RAW usd (не _cents(usd)) против минимума,
+    # с малым допуском для артефактов Decimal-арифметики (нога ровно на $1.00 обязана пройти)
     if sh <= 0 or usd + EPS_MONEY < min_notional_exact: return None
     return sh, usd, lim
 
@@ -677,25 +677,32 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         ask = Decimal(str(lot["ask"]))
         full_price = ask + Decimal(str(mp.fee_rate)) * ask * (1 - ask)
         usd_from_rounded = sh_rounded * full_price
-        # Update lot with rounded values
+        # Store RAW cost for total calculation, rounded cost for display
         lot["shares"] = round(float(sh_rounded), 1)
-        lot["usd"] = float(_cents(usd_from_rounded))
+        lot["usd_raw_rounded"] = usd_from_rounded  # RAW for comparison
+        lot["usd"] = float(_cents(usd_from_rounded + EPS_MONEY))  # Match JavaScript centsUp behavior
         lot["payout"] = round(float(sh_rounded), 1)
         del lot["shares_raw"]
         del lot["usd_raw"]
     
-    # Recompute total from rounded shares
+    # Recompute total from RAW usd values (before rounding), not from rounded usd
+    # This ensures we catch any case where the sum of raw costs exceeds cap
     total_from_rounded = Decimal("0")
     for lot in lots:
-        total_from_rounded += Decimal(str(lot["usd"]))
+        total_from_rounded += lot["usd_raw_rounded"]
     
-    # Verify recomputed total doesn't exceed cap
-    if total_from_rounded > cap + Decimal("0.01"):  # Allow 1 cent tolerance for rounding
+    # Verify recomputed total doesn't exceed cap - NO TOLERANCE
+    # Compare raw Decimal values precisely before any presentation rounding
+    if total_from_rounded > cap:
         return dict(base, reason=(f"после округления акций исполнимая стоимость "
-                                 f"${float(total_from_rounded):.2f} превышает "
+                                 f"${float(_cents(total_from_rounded)):.2f} превышает "
                                  f"доступное ${float(cap):.2f}"))
     
-    total = _cents(total_from_rounded)
+    # Clean up temporary fields
+    for lot in lots:
+        del lot["usd_raw_rounded"]
+    
+    total = _cents(total_from_rounded + EPS_MONEY)  # Match JavaScript centsUp behavior
     exp_pay = sum((l["p"] or 0)*l["payout"] for l in lots)
     ev_final = round(exp_pay/float(total) - 1, 4) if total > 0 else None
     return dict(lots=lots, skipped=skipped, total_usd=float(total),
@@ -752,17 +759,35 @@ def check_arb_legs(legs, mp, fetch=None):
             if book_min_order is None or book_tick is None:
                 return dict(ok=False, why="книга без метаданных min_order_size/tick_size",
                            exec_sets=0, exec_profit=0.0)
-            if book_min_order < 0 or book_min_order > MIN_ORDER_MAX:
-                return dict(ok=False, why=f"некорректный book min_order_size={book_min_order}",
+            # Проверяем положительность book_min_order
+            if book_min_order is None or book_min_order <= 0 or book_min_order > MIN_ORDER_MAX:
+                return dict(ok=False, why=f"некорректный book min_order_size={book_min_order} или нулевой",
                            exec_sets=0, exec_profit=0.0)
             if book_tick <= 0 or book_tick > TICK_MAX:
                 return dict(ok=False, why=f"некорректный book tick_size={book_tick}",
                            exec_sets=0, exec_profit=0.0)
+            # Проверяем совместимость mp.tick и book_tick
+            if mp.tick and book_tick:
+                if abs(mp.tick - book_tick) > 1e-9:
+                    return dict(ok=False, why=f"несовместимые тики: Gamma tick={mp.tick} vs книга tick_size={book_tick}",
+                               exec_sets=0, exec_profit=0.0)
         except Exception:
             return dict(ok=False, why="книга недоступна", exec_sets=0, exec_profit=0.0)
         if not asks:
             return dict(ok=False, why="пустая книга", exec_sets=0, exec_profit=0.0)
+        # Проверяем, что ВСЕ цены в книге соответствуют объявленному tick
+        for price, size in asks:
+            price_tick_mismatch = abs(price - round(price / book_tick) * book_tick)
+            if price_tick_mismatch > 1e-9:
+                return dict(ok=False, why=f"книга: цена {price} не кратна tick_size={book_tick}",
+                           exec_sets=0, exec_profit=0.0)
         price, size = asks[0]
+        # Проверяем котируемую цену, если она задана
+        if _quoted is not None:
+            quoted_tick_mismatch = abs(_quoted - round(_quoted / book_tick) * book_tick)
+            if quoted_tick_mismatch > 1e-9:
+                return dict(ok=False, why=f"котируемая цена {_quoted} не кратна tick_size={book_tick}",
+                           exec_sets=0, exec_profit=0.0)
         cost += allin(price, mp)
         sets = size if sets is None else min(sets, size)
         leg_data.append(dict(price=price, size=size, book_min_shares=book_min_order))
