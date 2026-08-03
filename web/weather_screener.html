@@ -305,8 +305,8 @@ function parseMarketParams(m){
         const r = numOf(fs, ["rate"]);
         const exp = numOf(fs, ["exponent"]);
         const takerOnly = fs.takerOnly;
-        // Поддерживаем только exponent=1 (квадратичная кривая) и takerOnly=true
-        if (r !== null && (exp === null || exp === 1) && (takerOnly === undefined || takerOnly === true)) {
+        // Поддерживаем только exponent=2 (квадратичная кривая rate*price*(1-price)) и takerOnly=true
+        if (r !== null && (exp === null || exp === 2) && (takerOnly === undefined || takerOnly === true)) {
           fee_rate = r;
         } else {
           return null;  // неподдерживаемый schedule → NO BET
@@ -413,10 +413,15 @@ function resolutionFingerprint(desc){ return (desc||"").replace(/\s+/g," ").trim
 function parseResolution(desc){
   const text = desc || "", low = text.toLowerCase();
   const sources = RES_SOURCES.filter(([, keys]) => keys.some(k => low.includes(k))).map(([n]) => n).sort();
+  // Удаляем UI-инструкции перед разбором единиц: фраза "To toggle between X and Y"
+  // описывает настройку отображения, а не нормативную единицу резолюции.
+  let text_norm = text.replace(/[Tt]o toggle\b[^.!?\n]*[.!?]?/g, "");
+  text_norm = text_norm.replace(/[Cc]lick the gear\b[^.!?\n]*[.!?]?/g, "");
+  const low_norm = text_norm.toLowerCase();
   const units = new Set();
-  for (const m of low.matchAll(/degrees\s+(celsius|fahrenheit)/g)) units.add(m[1][0].toUpperCase());
-  for (const m of text.matchAll(/°\s*([CF])\b/g)) units.add(m[1]);
-  for (const m of text.matchAll(/\bdeg\s*([CF])\b/g)) units.add(m[1]);
+  for (const m of low_norm.matchAll(/degrees\s+(celsius|fahrenheit)/g)) units.add(m[1][0].toUpperCase());
+  for (const m of text_norm.matchAll(/°\s*([CF])\b/g)) units.add(m[1]);
+  for (const m of text_norm.matchAll(/\bdeg\s*([CF])\b/g)) units.add(m[1]);
   const tokens = [...new Set(text.match(/\b[A-Z]{4}\b/g) || [])].filter(t => !STATION_STOP.has(t)).sort();
   return { sources, units: [...units].sort(), stations: tokens,
            known_stations: tokens.filter(t => ICAO_SET.has(t)), fingerprint: resolutionFingerprint(text) };
@@ -510,17 +515,35 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
   for (let i = 0; i < step.buckets.length; i++){
     const b = step.buckets[i], ask = step.asks[i], tid = (step.tids||[])[i], pp = (step.leg_p||[])[i];
     if (!ask || !tid){ skipped.push({ bucket: b, why: "нет книги" }); continue; }
-    const levels = books ? books[tid] : null;
-    if (!levels){ skipped.push({ bucket: b, why: "книга недоступна" }); continue; }
+    const book = books ? books[tid] : null;
+    if (!book){ skipped.push({ bucket: b, why: "книга недоступна" }); continue; }
+    // Валидируем метаданные книги: min_order_size и tick_size обязательны
+    if (book.min_order_size == null || book.tick_size == null){
+      skipped.push({ bucket: b, why: "в книге отсутствует min_order_size или tick_size" });
+      continue;
+    }
+    // Проверяем разумность метаданных
+    if (!(book.min_order_size > 0) || !(book.tick_size > 0)){
+      skipped.push({ bucket: b, why: "некорректные метаданные книги" });
+      continue;
+    }
+    // Используем бо́льший минимум из mp и фактической книги
+    const leg_mp = Object.assign({}, mp, { min_notional: Math.max(mp.min_notional, book.min_order_size) });
+    // Проверяем, что цена совместима с тиком
+    if (Math.abs(Math.round(ask / book.tick_size) * book.tick_size - ask) > EPS_M){
+      skipped.push({ bucket: b, why: `цена ${ask} несовместима с tick ${book.tick_size}` });
+      continue;
+    }
+    const levels = book.levels || [];
     const sorted = levels.slice().sort((a,z) => a[0]-z[0]);
-    const got = walkBook(sorted, mp, mp.min_shares || 0, cap);
-    if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${mp.min_notional}` }); continue; }
+    const got = walkBook(sorted, leg_mp, leg_mp.min_shares || 0, cap);
+    if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${leg_mp.min_notional}` }); continue; }
     const eff = got.usd/got.sh;
-    if (eff > thinMult*allin(ask, mp)){
+    if (eff > thinMult*allin(ask, leg_mp)){
       skipped.push({ bucket: b, why: `тонкая книга: средняя ${(eff*100).toFixed(1)}¢ против аска ${(ask*100).toFixed(1)}¢` });
       continue;
     }
-    legs.push({ bucket: b, ask, p: pp, levels: sorted, min_shares: got.sh, min_usd: got.usd, limit: got.lim });
+    legs.push({ bucket: b, ask, p: pp, levels: sorted, min_shares: got.sh, min_usd: got.usd, limit: got.lim, leg_mp });
   }
   if (legs.length < COMBO_MIN_LEGS) return fail(`исполнимых ног ${legs.length} < ${COMBO_MIN_LEGS}`, legs);
   const minTotal = legs.reduce((s,l) => s + l.min_usd, 0);
@@ -532,7 +555,8 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
   for (let i = 0; i < legs.length; i++){
     const l = legs[i];
     const restMin = legs.slice(i+1).reduce((s,x) => s + x.min_usd, 0);
-    const got = walkBook(l.levels, mp, target, cap - running - restMin) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
+    const leg_mp_use = l.leg_mp || mp;
+    const got = walkBook(l.levels, leg_mp_use, target, cap - running - restMin) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
     running += got.usd;
     lots.push({ bucket: l.bucket, ask: l.ask, limit: got.lim === null ? null : Math.round(got.lim*1000)/1000,
                 shares: round1(got.sh), usd: centsUp(got.usd), payout: round1(got.sh), p: l.p });
@@ -574,8 +598,14 @@ function checkArbLegs(legs, mp, books){
   const lots = [];
   for (const [tid] of legs){
     if (!tid) return { ok: false, why: "нет идентификатора книги", exec_sets: 0, exec_profit: 0 };
-    const levels = books ? books[tid] : null;
-    if (!levels) return { ok: false, why: "книга недоступна", exec_sets: 0, exec_profit: 0 };
+    const book = books ? books[tid] : null;
+    if (!book) return { ok: false, why: "книга недоступна", exec_sets: 0, exec_profit: 0 };
+    // Валидируем метаданные книги
+    if (book.min_order_size == null || book.tick_size == null)
+      return { ok: false, why: "книга без метаданных min_order_size/tick_size", exec_sets: 0, exec_profit: 0 };
+    if (!(book.min_order_size > 0) || !(book.tick_size > 0))
+      return { ok: false, why: "некорректные метаданные книги", exec_sets: 0, exec_profit: 0 };
+    const levels = book.levels || [];
     if (!levels.length) return { ok: false, why: "пустая книга", exec_sets: 0, exec_profit: 0 };
     const asks = levels.slice().sort((a,z) => a[0]-z[0]);
     const price = +asks[0][0], size = +asks[0][1];
@@ -685,7 +715,10 @@ async function fetchBookLevels(tid){
   if (!tid) return null;
   try {
     const b = await fetchJSON("https://clob.polymarket.com/book?token_id=" + tid, 2);
-    return (b.asks || []).map(a => [+a.price, +a.size]).sort((x,z) => x[0]-z[0]);
+    const levels = (b.asks || []).map(a => [+a.price, +a.size]).sort((x,z) => x[0]-z[0]);
+    const min_order_size = numOf(b, ["min_order_size", "minOrderSize"]);
+    const tick_size = numOf(b, ["tick_size", "tickSize"]);
+    return { levels, min_order_size, tick_size };
   } catch(e){ return null; }
 }
 async function fetchBooks(tids){

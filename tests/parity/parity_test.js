@@ -84,7 +84,16 @@ out.kelly = cases.kelly.map(c => ({
 
 function execOf(step, mp, budgetLeft, books){
   if (!step) return null;
-  const ex = C.comboLots(step, mp, budgetLeft, books);
+  // Преобразуем книги из массивов в структуру с метаданными
+  const booksWithMeta = {};
+  for (const tid in books){
+    booksWithMeta[tid] = {
+      levels: books[tid],
+      min_order_size: 1,      // стандартное значение для тестовых книг
+      tick_size: 0.01
+    };
+  }
+  const ex = C.comboLots(step, mp, budgetLeft, booksWithMeta);
   return {
     ok: ex.ok, reason: ex.reason === undefined ? null : ex.reason,
     total_usd: r(ex.total_usd, 2), min_usd: ex.min_usd === null ? null : r(ex.min_usd, 2),
@@ -101,7 +110,16 @@ out.combo_lots = cases.combo_lots.map(c => ({
 }));
 
 out.arb = cases.arb.map(c => {
-  const res = C.checkArbLegs(c.legs.map(t => [t]), mpOf(c.mp), c.books);
+  // Преобразуем книги из массивов в структуру с метаданными
+  const booksWithMeta = {};
+  for (const tid in c.books){
+    booksWithMeta[tid] = {
+      levels: c.books[tid],
+      min_order_size: 1,
+      tick_size: 0.01
+    };
+  }
+  const res = C.checkArbLegs(c.legs.map(t => [t]), mpOf(c.mp), booksWithMeta);
   return { name: c.name, ok: res.ok, why: res.why === undefined ? null : res.why,
            exec_sets: res.exec_sets, exec_cost: r(res.exec_cost, 3), exec_profit: r(res.exec_profit, 2) };
 });
@@ -117,7 +135,18 @@ out.chance_combos = cases.chance_combos.map(c => {
 
 out.verdict = cases.verdict.map(c => {
   const mp = mpOf(c.mp);
-  const ex = c.step ? C.comboLots(c.step, mp, c.budget_left, c.books) : null;
+  // Преобразуем книги из массивов в структуру с метаданными
+  const booksWithMeta = c.books ? {} : null;
+  if (c.books){
+    for (const tid in c.books){
+      booksWithMeta[tid] = {
+        levels: c.books[tid],
+        min_order_size: 1,
+        tick_size: 0.01
+      };
+    }
+  }
+  const ex = c.step ? C.comboLots(c.step, mp, c.budget_left, booksWithMeta) : null;
   const [ok, why] = C.approveCombo(ex, c.budget_left);
   return { name: c.name, verdict: ok ? "BET" : "NO BET", why,
            total_usd: ex && ex.ok ? r(ex.total_usd, 2) : null,
