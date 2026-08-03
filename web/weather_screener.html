@@ -473,7 +473,15 @@ function kellyStake(pBase, pCons, cost, bankroll, cap, depth){
   return st < 0.5 ? 0 : Math.max(st, 1);
 }
 
-const centsUp = x => Math.ceil(x*100)/100;           // деньги: до цента, строго вверх
+/* centsUp: консервативное округление вверх до цента, но с допуском на двоичную
+   арифметику. Точный цент (например 0.07) не округляется выше из-за погрешности
+   0.07*100=7.000000000000001. Genuine sub-cent 1.494 → 1.50, точный 1.49 → 1.49. */
+const centsUp = x => {
+  const cents = x * 100;
+  const rounded = Math.round(cents);
+  if (Math.abs(cents - rounded) < EPS_M) return rounded / 100;
+  return Math.ceil(cents) / 100;
+};
 const centsDown = x => Math.floor(x*100 + EPS_M)/100;    // потолки: строго вниз
 const round1 = x => Math.round(x*10)/10;
 
@@ -739,6 +747,43 @@ function chanceCombos(r, mp, maxN, minEv, minP, maxCost){
   }
   return steps;
 }
+
+/* Исполнимый лот для одиночной ставки: book walk с валидацией метаданных. */
+function singleLot(pick, mp, budgetLeft, book){
+  if (!pick) return { ok: false, shares: 0, usd: 0, reason: "нет pick" };
+  if (!mp) return { ok: false, shares: 0, usd: 0, reason: "нет торговых параметров (mp)" };
+  if (!pick.token_id) return { ok: false, shares: 0, usd: 0, reason: "нет token_id" };
+  if (!book) return { ok: false, shares: 0, usd: 0, reason: "книга недоступна" };
+  // Validate book metadata
+  if (book.min_order_size == null || book.tick_size == null)
+    return { ok: false, shares: 0, usd: 0, reason: "книга без метаданных min_order_size/tick_size" };
+  if (!(book.min_order_size > 0) || !(book.tick_size > 0))
+    return { ok: false, shares: 0, usd: 0, reason: "некорректные метаданные книги" };
+  // Validate price/tick compatibility
+  const ask = +pick.ask;
+  if (Math.abs(ask - Math.round(ask / book.tick_size) * book.tick_size) > EPS_M)
+    return { ok: false, shares: 0, usd: 0, reason: `цена ${ask} несовместима с tick=${book.tick_size}` };
+  if (mp.tick != null && Math.abs(mp.tick - book.tick_size) > EPS_M)
+    return { ok: false, shares: 0, usd: 0, reason: `несовместимые тики: Gamma=${mp.tick} vs книга=${book.tick_size}` };
+  const levels = book.levels || [];
+  if (!levels.length) return { ok: false, shares: 0, usd: 0, reason: "пустая книга" };
+  // Validate all prices in levels match tick
+  for (const lv of levels){
+    const price = +lv[0];
+    if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
+      return { ok: false, shares: 0, usd: 0, reason: `книга: цена ${price} не кратна tick=${book.tick_size}` };
+  }
+  const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
+  const leg_mp = Object.assign({}, mp, { min_shares: leg_min_shares });
+  const stake = +pick.stake || 0;
+  const cap = centsDown(Math.min(stake, +budgetLeft || 0));
+  const got = walkBook(levels, leg_mp, leg_min_shares, cap);
+  if (!got)
+    return { ok: false, shares: 0, usd: 0, 
+             reason: `в книге нет объёма на минимум $${leg_mp.min_notional} / ${leg_min_shares} акций` };
+  return { ok: true, shares: round1(got.sh), usd: centsUp(got.usd), limit: got.lim, reason: null };
+}
+
 
 var PARITY_CORE = { erf, phi, f2c, parseBucket, coverageOk, parseMarketParams, eventParams,
   feeOf, allin, famProb, logPool, parseResolution, checkResolution, kellyStake,
@@ -1196,11 +1241,11 @@ async function scan(){
   const groups = [...byKey.values()]
     .map(g => ({ ...g, score: (g.yes ? g.yes.ev*g.yes.conf : 0) + (g.no ? g.no.ev*g.no.conf : 0) }))
     .sort((a,z) => z.score - a.score);
-  const picks = groups.slice(0, 6);
-  const rest = groups.slice(6);
-  // автопроверка глубины стакана для ног топ-сетапов
+  // Evaluate ALL candidates, not just first 6
+  const picks = groups;
+  // автопроверка глубины стакана для ног топ-сетапов (только топ 10 для производительности)
   prog.textContent = "Проверяю глубину стаканов…";
-  await Promise.all(picks.flatMap(g => [
+  await Promise.all(picks.slice(0, 10).flatMap(g => [
     g.yes ? fetchDepth(g.yes.b, "YES").then(d => { g.yes.depth = d; }) : null,
     g.no  ? fetchDepth(g.no.b,  "NO").then(d => { g.no.depth = d; })  : null,
   ].filter(Boolean)));
@@ -1262,12 +1307,25 @@ async function scan(){
   } else if (sBest && sWhy){
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
   } else if (vConf >= 5){
-    // Validate top single pick has necessary data for execution
+    // Validate top single pick with actual book walk and executable sizing
     const vSide = vTop.yes && vTop.yes.conf === 5 ? vTop.yes : (vTop.no && vTop.no.conf === 5 ? vTop.no : null);
+    let singleExec = null, singleReason = null;
     if (vSide && vSide.token_id && vSide.mp){
-      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
+      // Fetch actual book and validate executable economics
+      const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+      const vBook = await fetchBook(vSide.token_id);
+      singleExec = singleLot({ token_id: vSide.token_id, ask: vSide.ask, stake: vStake }, 
+                              vSide.mp, weatherCap, vBook);
+      if (!singleExec.ok){
+        singleReason = singleExec.reason || "не исполняется";
+      }
     } else {
-      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Лучший кандидат не имеет обязательных метаданных для исполнения (token_id, mp).</div>`;
+      singleReason = "нет обязательных метаданных (token_id, mp)";
+    }
+    if (singleExec && singleExec.ok){
+      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — ${esc(vTop.city.name)} (${fmtDateRu(vTop.r.dateStr)}), ${vSide.side} на бакет «${esc(vSide.b)}», ${singleExec.shares.toFixed(1)} акций по ≤${fmtC(singleExec.limit)} за $${singleExec.usd.toFixed(2)} — первая карточка ниже.</div>`;
+    } else {
+      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Лучший кандидат не прошёл исполнимую проверку: ${esc(singleReason || "не исполняется")}.</div>`;
     }
   } else {
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Это нормальный результат: ставим только при подтверждённом перевесе.</div>`;
