@@ -16,6 +16,7 @@ src/wx_daily.py      main scanner: station calibration, probabilities, combo
                      portfolio check, verdict of the day
 src/paper_eval.py    append-only full-distribution archive and proper scoring
                      (log-loss, RPS, cheap tails, data-driven lambda)
+src/settlement.py    fail-closed final-outcome evidence and immutable ledger
 src/watchdog.py      6-hourly watchdog: fresh large earthquakes, arbitrage
                      signals in circuits #2 and #3
 src/check_city.py    spot-check one city: python3 check_city.py chengdu 2026-08-03
@@ -126,17 +127,20 @@ python src/wx_daily.py > report.json
 python src/paper_eval.py capture report.json /persistent/path/paper_forecasts.jsonl
 ```
 
-After final outcomes have been recorded, score every city-day rather than only
-the legs that happened to become bets:
+Collect only unambiguous final outcomes from the public Gamma event payload,
+then score every city-day rather than only the legs that became bets:
 
 ```
-python src/paper_eval.py score /persistent/path/paper_forecasts.jsonl outcomes.json
+python src/settlement.py /persistent/path/paper_forecasts.jsonl /persistent/path/settlements.jsonl
+python src/paper_eval.py score /persistent/path/paper_forecasts.jsonl /persistent/path/settlements.jsonl
 ```
 
 The score report compares mean log-loss and normalized RPS, summarizes all
 market buckets priced at 5¢ or less, and evaluates a fixed lambda grid. The
 ledger is atomic and append-only: an exact retry is harmless, while changed
-content for the same event and capture time is rejected.
+content for the same event and capture time is rejected. Settlement also fails
+closed unless the event and all buckets are closed, the saved resolution rules
+and bucket schema still match, and prices show exactly one binary YES winner.
 
 ## Current state
 
