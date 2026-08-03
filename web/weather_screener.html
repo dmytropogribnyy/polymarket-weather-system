@@ -306,8 +306,8 @@ function parseMarketParams(m){
         const r = numOf(fs, ["rate"]);
         const exp = numOf(fs, ["exponent"]);
         const takerOnly = fs.takerOnly;
-        // Поддерживаем только exponent=2 (квадратичная кривая rate*price*(1-price)) и takerOnly=true
-        if (r !== null && (exp === null || exp === 2) && (takerOnly === undefined || takerOnly === true)) {
+        // Polymarket задаёт степень каждому множителю: p^e*(1-p)^e; текущая кривая использует e=1.
+        if (r !== null && (exp === null || exp === 1) && (takerOnly === undefined || takerOnly === true)) {
           fee_rate_canonical = r;
         } else {
           return null;  // неподдерживаемый schedule → NO BET

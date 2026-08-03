@@ -4,7 +4,9 @@
 максимумы, минимумы, серия и одиночные ставки, — включая уже исполненные
 позиции и уже выданные в этом прогоне рекомендации.
 """
+import os
 import unittest
+from unittest.mock import patch
 
 from tests.support import combo_step  # noqa: F401
 import wx_daily as w
@@ -72,6 +74,22 @@ class TestBudgetAllocator(unittest.TestCase):
 
 
 class TestPortfolioFeedsAllocator(unittest.TestCase):
+    @staticmethod
+    def _portfolio_fetch():
+        from tests.support import FakeFetch
+        return FakeFetch({"data-api.polymarket.com/positions": [],
+                          "data-api.polymarket.com/value": [dict(value="0")],
+                          "data-api.polymarket.com/activity": []})
+
+    def test_wallet_can_be_supplied_by_environment(self):
+        """Scheduled jobs configure the public address without committing it."""
+        wallet = "0x1111111111111111111111111111111111111111"
+        fetch = self._portfolio_fetch()
+        with patch.dict(os.environ, {"PM_WALLET": wallet}, clear=False):
+            pf = w.portfolio_scan(fetch=fetch)
+        self.assertIsNotNone(pf)
+        self.assertTrue(any(f"user={wallet}" in url for url in fetch.calls))
+
     def test_spent_grouped_by_weather_date(self):
         from tests.support import FakeFetch
         positions = [dict(title="Chengdu 30°C", outcome="Yes", size=10.0, avgPrice=0.1,

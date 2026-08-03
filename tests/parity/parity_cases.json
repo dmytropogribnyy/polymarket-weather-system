@@ -75,7 +75,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.05",
-            "exponent": 2,
+            "exponent": 1,
             "takerOnly": true
           },
           "minimum_tick_size": 0.01,
@@ -85,7 +85,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.05",
-            "exponent": 2,
+            "exponent": 1,
             "takerOnly": true
           },
           "minimum_tick_size": 0.01,
@@ -100,7 +100,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.07",
-            "exponent": 2,
+            "exponent": 1,
             "takerOnly": true
           },
           "minimum_tick_size": 0.001,
@@ -110,7 +110,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.07",
-            "exponent": 2,
+            "exponent": 1,
             "takerOnly": true
           },
           "minimum_tick_size": 0.001,
@@ -125,7 +125,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.05",
-            "exponent": 1,
+            "exponent": 3,
             "takerOnly": true
           },
           "minimum_tick_size": 0.01,
@@ -140,7 +140,7 @@
           "feesEnabled": true,
           "feeSchedule": {
             "rate": "0.05",
-            "exponent": 2,
+            "exponent": 1,
             "takerOnly": false
           },
           "minimum_tick_size": 0.01,

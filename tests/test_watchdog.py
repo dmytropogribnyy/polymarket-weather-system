@@ -39,6 +39,15 @@ class ParamsFailClosedTest(unittest.TestCase):
         p = wd.event_params([market(taker_base_fee=500)], FakeFetch())
         self.assertAlmostEqual(p.fee_rate, 0.05)
 
+    def test_live_weather_exponent_one_is_understood(self):
+        m = market()
+        m.pop("taker_base_fee")
+        m.update(feesEnabled=True,
+                 feeSchedule={"rate": 0.05, "exponent": 1, "takerOnly": True})
+        p = wd.event_params([m], FakeFetch())
+        self.assertIsNotNone(p)
+        self.assertAlmostEqual(p.fee_rate, 0.05)
+
     def test_insane_values_are_rejected(self):
         self.assertIsNone(wd.parse_market_params(market(taker_base_fee=9000)))
         self.assertIsNone(wd.parse_market_params(market(minimum_tick_size=0.5)))

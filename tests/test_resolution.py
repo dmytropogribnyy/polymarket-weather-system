@@ -163,6 +163,21 @@ class TestScreenIsFailClosed(unittest.TestCase):
         self.assertEqual(trades, [])
         self.assertEqual(len(w.PAPER_FORECASTS), 1)
 
+    def test_paper_forecast_is_kept_when_trade_params_fail_closed(self):
+        """Trade eligibility must never censor the independent paper dataset."""
+        w.PAPER_FORECASTS.clear(); w.RES_SEEN.clear(); w.PARAM_FAILS.clear()
+        fetch = self._fetch(VALID)
+        event = fetch.routes["gamma-api.polymarket.com/events"][0]
+        for market in event["markets"]:
+            market["taker_base_fee"] = None
+            market["feesEnabled"] = True
+            market["feeSchedule"] = {"rate": 0.05, "exponent": 3,
+                                     "takerOnly": True}
+        trades = w.screen("chengdu", self._cal(), [(1, "2026-08-04")], fetch=fetch)
+        self.assertEqual(trades, [])
+        self.assertTrue(w.PARAM_FAILS)
+        self.assertEqual(len(w.PAPER_FORECASTS), 1)
+
     def test_station_mismatch_produces_no_trades(self):
         w.RES_FAILS.clear(); w.RES_SEEN.clear()
         desc = VALID.replace("ZUUU", "ZUCK")

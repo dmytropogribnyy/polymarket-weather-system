@@ -97,7 +97,8 @@ comments are Russian too; the code itself is short and readable regardless.
    data API (read-only, wallet address only), computes the per-outcome payoff
    table for every open event, tracks today's spend against the daily limit,
    flags recommendations that conflict with held positions, and reminds about
-   unredeemed winnings.
+   unredeemed winnings. Supply the public address at runtime with
+   `PM_WALLET=0x... python src/wx_daily.py`; never commit wallet credentials.
 
 Details, formulas and thresholds: `docs/METHODOLOGY.md`.
 
@@ -120,7 +121,9 @@ number — if the page and the nightly job drift apart, CI goes red.
 
 Every complete weather market scanned by `wx_daily.py` is emitted in
 `paper_forecasts` with the full mutually-exclusive distribution from the raw
-model, the shrunk model and normalized market midpoints. Archive a daily run:
+model, the shrunk model and normalized market midpoints. This capture happens
+before liquidity and trade-parameter eligibility checks, so a fail-closed
+trading decision cannot censor the model evaluation dataset. Archive a daily run:
 
 ```
 python src/wx_daily.py > report.json
