@@ -18,12 +18,16 @@ class TestWeatherDateKey(unittest.TestCase):
                          "2026-08-03")
         self.assertEqual(w.weather_date_of_slug("lowest-temperature-in-tokyo-on-december-31-2025"),
                          "2025-12-31")
-        self.assertIsNone(w.weather_date_of_slug("bitcoin-above-on-august-3-2026"))
+        self.assertIsNone(w.weather_date_of_slug("unrelated-market-on-august-3-2026"))
         self.assertIsNone(w.weather_date_of_slug(""))
         self.assertIsNone(w.weather_date_of_slug(None))
 
 
 class TestBudgetAllocator(unittest.TestCase):
+    def test_global_cap_matches_two_weather_dates(self):
+        self.assertEqual(w.WEATHER_DAY_CAP, 5.0)
+        self.assertEqual(w.DAY_LIMIT, 2 * w.WEATHER_DAY_CAP)
+
     def test_single_pot_per_weather_date(self):
         a = w.BudgetAllocator()
         self.assertEqual(a.remaining("2026-08-03"), 5.0)

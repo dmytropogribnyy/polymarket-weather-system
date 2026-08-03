@@ -1,4 +1,4 @@
-"""Tests for the 4 remaining safety-contract gaps from review comment 5163652392.
+"""Tests for the remaining safety-contract gaps from review comment 5163652392.
 
 These tests are RED-first: they expose production-contract failures on head 410ee051
 and must pass after the fixes."""
@@ -10,7 +10,6 @@ from decimal import Decimal, ROUND_DOWN
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import wx_daily
-import watchdog
 
 
 class ShareRoundingGapTest(unittest.TestCase):
@@ -126,7 +125,7 @@ class TickAndMinimumEnforcementGapTest(unittest.TestCase):
     """Item 2: Tick and positive-minimum enforcement is still incomplete.
     
     From review: web checkArbLegs returns ok:true for ask 0.403 with book tick=0.01,
-    and for Gamma mp.tick=0.01 vs book tick=0.001. Python/watchdog arb has the same
+    and for Gamma mp.tick=0.01 vs book tick=0.001. Python arb had the same
     missing alignment checks. Also: all paths accept book_min_shares == 0 because
     they use < 0, not a positive check."""
     
@@ -209,43 +208,6 @@ class TickAndMinimumEnforcementGapTest(unittest.TestCase):
         self.assertFalse(result.get("ok"), 
                         "Should reject when book min_order_size == 0")
     
-    def test_watchdog_arb_rejects_ask_not_aligned_to_tick(self):
-        """watchdog check_arb_legs must reject misaligned ask prices."""
-        def fake_fetch(url):
-            return {
-                "asks": [{"price": 0.403, "size": 10.0}],  # Not aligned to tick=0.01
-                "min_order_size": 1.0,
-                "tick_size": 0.01
-            }
-        
-        mp = watchdog.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, 
-                                    min_shares=1.0, source="test")
-        legs = [("tok1", 0.40), ("tok2", 0.50)]
-        
-        result = watchdog.check_arb_legs(legs, mp, fetch=fake_fetch)
-        
-        self.assertFalse(result.get("ok"), 
-                        "Watchdog arb should reject misaligned ask prices")
-    
-    def test_watchdog_arb_rejects_zero_book_minimum(self):
-        """watchdog check_arb_legs must use positive check for book minimum."""
-        def fake_fetch(url):
-            return {
-                "asks": [{"price": 0.30, "size": 10.0}],
-                "min_order_size": 0.0,
-                "tick_size": 0.01
-            }
-        
-        mp = watchdog.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, 
-                                    min_shares=1.0, source="test")
-        legs = [("tok1", 0.30), ("tok2", 0.50)]
-        
-        result = watchdog.check_arb_legs(legs, mp, fetch=fake_fetch)
-        
-        self.assertFalse(result.get("ok"), 
-                        "Watchdog arb should reject zero book minimum")
-
-
 class SingleWalkBookInconsistencyTest(unittest.TestCase):
     """Item 3: Single _walk_book accepts any positive depth but rejects zero,
     inconsistent with combo which validates minimum shares and notional."""
@@ -294,63 +256,6 @@ class SingleWalkBookInconsistencyTest(unittest.TestCase):
         result_small = wx_daily._walk_book([[0.50, 0.001]], mp, 1.0, 10.0)
         self.assertIsNone(result_small, 
                          "_walk_book should reject depth below minimum shares")
-
-
-class WatchdogPathsUntested(unittest.TestCase):
-    """Item 4: Watchdog arbitrage and single paths are still untested.
-    
-    Add coverage for watchdog.py flows: chance_combos with per-market fee,
-    single pick validation, and arb execution constraints."""
-    
-    def test_watchdog_chance_combo_uses_per_market_fee(self):
-        """watchdog chance_combos must use mp.fee_rate, not a constant."""
-        mp = watchdog.MarketParams(fee_rate=0.07, tick=0.01, min_notional=1.0, 
-                                    min_shares=1.0, source="test")
-        rows = [
-            {"ask": 0.30, "p": 0.35, "bucket": "A"},
-            {"ask": 0.25, "p": 0.30, "bucket": "B"},
-        ]
-        
-        combos = watchdog.chance_combos(rows, mp, max_n=2, min_ev=0.10, min_p=0.40)
-        
-        # Verify that fee calculation used mp.fee_rate=0.07
-        # With 0.07 fee rate, the cost should be higher than with 0.05
-        # allin(0.30, mp) = 0.30 + 0.07*0.30*0.70 = 0.3147
-        # allin(0.25, mp) = 0.25 + 0.07*0.25*0.75 = 0.263125
-        # Total cost ~= 0.577875
-        
-        if combos:
-            combo = combos[0]
-            expected_min_cost = 0.57  # Approximate with 0.07 fee
-            self.assertGreater(combo.get("cost", 0), expected_min_cost,
-                             "Chance combo should use mp.fee_rate=0.07")
-    
-    def test_watchdog_has_no_single_execution_path(self):
-        """The watchdog cannot bypass wx_daily.single_lot: it has no single path."""
-        self.assertFalse(hasattr(watchdog, "single_lot"))
-    
-    def test_watchdog_arb_validates_per_leg_constraints(self):
-        """watchdog check_arb_legs must validate both USDC notional AND shares per leg."""
-        # Already covered in TickAndMinimumEnforcementGapTest
-        # But add explicit coverage for the per-leg iteration
-        def fake_fetch(url):
-            return {
-                "asks": [{"price": 0.10, "size": 5.0}],  # 5 shares at $0.10
-                "min_order_size": 2.0,
-                "tick_size": 0.01
-            }
-        
-        mp = watchdog.MarketParams(fee_rate=0.05, tick=0.01, min_notional=1.0, 
-                                    min_shares=1.0, source="test")
-        # Two legs, first leg has only 5 shares but minimum is higher than available
-        legs = [("tok1", 0.10), ("tok2", 0.80)]
-        
-        result = watchdog.check_arb_legs(legs, mp, fetch=fake_fetch)
-        
-        # Should calculate max executable sets and validate per-leg constraints
-        # With 5 shares at $0.10 and book minimum 2.0, can execute 5 sets
-        # But must validate both notional and shares per leg
-        self.assertIsInstance(result, dict, "Should return dict with execution details")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # Polymarket weather system
 
-A system for finding gaps between Polymarket crowd prices and probabilities
-computed from meteorological ensembles. Three circuits: temperature markets
-(the core), earthquake-count markets, and crypto price markets.
+A system for finding gaps between Polymarket temperature-market prices and
+probabilities computed from meteorological ensembles. The scheduled production
+path is weather-only.
 
 One idea underneath everything: **profit is the gap between the market price
 and the true probability.** Forecast accuracy by itself earns nothing — it is
@@ -17,13 +17,9 @@ src/wx_daily.py      main scanner: station calibration, probabilities, combo
 src/paper_eval.py    append-only full-distribution archive and proper scoring
                      (log-loss, RPS, cheap tails, data-driven lambda)
 src/settlement.py    fail-closed final-outcome evidence and immutable ledger
-src/watchdog.py      6-hourly watchdog: fresh large earthquakes, arbitrage
-                     signals in circuits #2 and #3
 src/check_city.py    spot-check one city: python3 check_city.py chengdu 2026-08-03
 
 web/weather_screener.html   standalone browser screener, 48 cities
-web/quake_screener.html     earthquake-count screener (Poisson vs USGS)
-web/crypto_screener.html    BTC/ETH above-$K vs Deribit options surface
 
 docs/METHODOLOGY.md    how probabilities and stake sizes are actually computed
 docs/OPEN_QUESTIONS.md the places where I am not sure I'm right (start here)
@@ -75,14 +71,13 @@ comments are Russian too; the code itself is short and readable regardless.
    spread). A signal counts only if the edge survives both stress runs.
 5. **Market-specific trading parameters.** Taker fee rate, tick size and
    minimum order are read from the concrete market (Gamma fields, falling back
-   to CLOB by `conditionId`) — weather, earthquakes and crypto no longer share
-   a hard-coded fee constant. Missing or insane values mean NO BET. All
+   to CLOB by `conditionId`). Missing or insane values mean NO BET. All
    economics — filters, EV, Kelly, combos, arbitrage — use the resulting
    all-in price. Legs cheaper than 3¢ are banned during validation.
 6. **Sizing & budget.** Quarter-Kelly on a conservative probability, capped by
    order-book depth and by one code-enforced allocator: $5 per **resolution
    (weather) date** shared by max, min and series recommendations alike —
-   already executed positions of that date included — inside a $15/day total.
+   already executed positions of that date included — inside a $10/day total.
 7. **Execution.** A decimal book-walk computes executable lots per leg (fees
    included), honoring the market's minimum order and rejecting thin-book legs.
    A combo is approved only after the lots exist: at least two surviving legs,
@@ -98,9 +93,44 @@ comments are Russian too; the code itself is short and readable regardless.
    table for every open event, tracks today's spend against the daily limit,
    flags recommendations that conflict with held positions, and reminds about
    unredeemed winnings. Supply the public address at runtime with
-   `PM_WALLET=0x... python src/wx_daily.py`; never commit wallet credentials.
+   `PM_WALLET=0x... python src/run_daily.py`; never commit wallet credentials.
 
 Details, formulas and thresholds: `docs/METHODOLOGY.md`.
+
+## Durable daily runtime
+
+Run the long scan through the atomic Linux entrypoint rather than redirecting
+`wx_daily.py` directly:
+
+```
+PM_WALLET=0x... python src/run_daily.py \
+  --output /persistent/path/report.json \
+  --status /persistent/path/scan_status.json \
+  --lock /persistent/path/scan.lock \
+  --workers 4
+```
+
+The command stays in the foreground. An OS lock rejects duplicate scans; a
+failed run preserves the last good report; report and status files are fsynced
+and atomically replaced. `scan_status.json` includes a stage, completed/total
+counters and a heartbeat while the final report is still being built. The
+runtime uses bounded per-host concurrency,
+single-flights identical snapshot requests, reuses max/min weather payloads,
+and never caches order books, portfolio activity, or option quotes. During the
+bulk weather screen, complete Gamma trading parameters also avoid an unnecessary
+CLOB metadata request for every bucket; actual books and their minimum/tick
+metadata remain mandatory at the execution gate. `report.runtime.network`
+exposes request/cache counters.
+Individual HTTP attempts time out after 20 seconds (`WX_HTTP_TIMEOUT`, bounded
+to 5–60 seconds), and the CLI fails closed after 25 minutes by default instead
+of hanging indefinitely. A timeout preserves the last complete report.
+
+The daily default is deliberately narrow: it calibrates every configured city,
+on the first run, then recalibrates prior tier A/B cities daily and rotates
+non-traded tier C cities over seven days. It spends the expensive
+ensemble/market pass only on the freshly confirmed A/B city-horizons. Tier C
+remains visible in calibration and can be fully audited with `--include-tier-c`.
+Selection happens before seeing the current outcome or model edge.
 
 ## Tests
 
@@ -126,7 +156,7 @@ before liquidity and trade-parameter eligibility checks, so a fail-closed
 trading decision cannot censor the model evaluation dataset. Archive a daily run:
 
 ```
-python src/wx_daily.py > report.json
+python src/run_daily.py --output report.json --status scan_status.json --lock scan.lock
 python src/paper_eval.py capture report.json /persistent/path/paper_forecasts.jsonl
 ```
 
@@ -161,7 +191,7 @@ Note on the scheduled jobs: they live outside this repository and are not
 updated by any change here. Until the job is pointed at the current code, none
 of the protections above are in effect for the nightly run.
 
-Bankroll ~$100, validation phase: $5/day weather cap inside a $15/day total,
+Bankroll ~$100, validation phase: $5/day weather cap inside a $10/day total,
 probabilities shrunk toward the market (λ=0.25), skip-days are the norm.
 Limits rise only after enough independently settled city-days confirm
 calibration; P&L alone is not evidence. See `docs/JOURNAL.md` and the paper

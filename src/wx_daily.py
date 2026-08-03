@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Daily Polymarket weather job: recalibrate stations -> screen tomorrow &
 day-after -> print JSON report. Self-contained, stdlib only."""
-import hashlib, json, math, os, re, time, urllib.request, urllib.parse
+import hashlib, json, math, os, re, threading, time, urllib.error, urllib.request, urllib.parse
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 
@@ -44,15 +45,159 @@ REF_BIAS = {  # эталон: поправка ECMWF на горизонте 1 �
  "san-francisco":2.33,"moscow":-0.06}  # 2026-08-01, новые города 2026-08-02
 MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"]
 
+def http_timeout(value=None):
+    raw = os.environ.get("WX_HTTP_TIMEOUT", "20") if value is None else value
+    try: return max(5.0, min(float(raw), 60.0))
+    except (TypeError, ValueError): return 20.0
+
+
 def get(url, tries=3):
     for i in range(tries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent":"wx-daily/1.0"})
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=http_timeout()) as r:
                 return json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            # Permanent client errors should fail immediately; retry throttling and
+            # transient server failures, respecting Retry-After when available.
+            if e.code not in (408, 425, 429, 500, 502, 503, 504) or i == tries-1:
+                raise
+            retry_after = e.headers.get("Retry-After") if e.headers else None
+            try: delay = max(float(retry_after), 0.0)
+            except (TypeError, ValueError): delay = 2*(i+1)
+            time.sleep(min(delay, 30.0))
         except Exception:
             if i == tries-1: raise
             time.sleep(2*(i+1))
+
+
+class _Flight:
+    def __init__(self):
+        self.event = threading.Event()
+        self.result = None
+        self.error = None
+
+
+class RunFetcher:
+    """Thread-safe, per-run JSON fetcher.
+
+    Slow snapshot endpoints are cached and identical concurrent requests are
+    single-flighted.  Volatile execution data (books and portfolio/activity)
+    always reaches the network.  A global worker pool plus
+    per-host semaphores bounds pressure on public APIs.
+    """
+    VOLATILE = (
+        "clob.polymarket.com/book?",
+        "data-api.polymarket.com/positions?",
+        "data-api.polymarket.com/value?",
+        "data-api.polymarket.com/activity?",
+    )
+    HOST_LIMITS = {
+        "previous-runs-api.open-meteo.com": 3,
+        "ensemble-api.open-meteo.com": 3,
+        "aviationweather.gov": 2,
+        "gamma-api.polymarket.com": 3,
+        "clob.polymarket.com": 2,
+    }
+
+    def __init__(self, base=None):
+        self.base = base or get
+        self._cache = {}
+        self._flights = {}
+        self._semaphores = {}
+        self._lock = threading.Lock()
+        self._actual_requests = 0
+        self._cache_hits = 0
+        self._singleflight_hits = 0
+        self._active = 0
+        self._peak = 0
+
+    def _cacheable(self, url):
+        return not any(marker in url for marker in self.VOLATILE)
+
+    def _semaphore(self, url):
+        host = urllib.parse.urlsplit(url).netloc.lower()
+        with self._lock:
+            sem = self._semaphores.get(host)
+            if sem is None:
+                sem = threading.BoundedSemaphore(self.HOST_LIMITS.get(host, 2))
+                self._semaphores[host] = sem
+            return sem
+
+    def _network(self, url):
+        sem = self._semaphore(url)
+        with sem:
+            with self._lock:
+                self._actual_requests += 1
+                self._active += 1
+                self._peak = max(self._peak, self._active)
+            try:
+                return self.base(url)
+            finally:
+                with self._lock:
+                    self._active -= 1
+
+    def __call__(self, url, *args, **kwargs):
+        # Production fetchers take just URL.  Keep args in the signature so the
+        # wrapper remains drop-in compatible with deterministic test doubles.
+        if args or kwargs:
+            return self.base(url, *args, **kwargs)
+        if not self._cacheable(url):
+            return self._network(url)
+        with self._lock:
+            if url in self._cache:
+                self._cache_hits += 1
+                return self._cache[url]
+            flight = self._flights.get(url)
+            if flight is None:
+                flight = _Flight()
+                self._flights[url] = flight
+                owner = True
+            else:
+                self._singleflight_hits += 1
+                owner = False
+        if not owner:
+            flight.event.wait()
+            if flight.error is not None:
+                raise flight.error
+            return flight.result
+        try:
+            result = self._network(url)
+            flight.result = result
+            with self._lock:
+                self._cache[url] = result
+            return result
+        except BaseException as exc:
+            flight.error = exc
+            raise
+        finally:
+            with self._lock:
+                self._flights.pop(url, None)
+            flight.event.set()
+
+    def stats(self):
+        with self._lock:
+            return dict(actual_requests=self._actual_requests,
+                        cache_hits=self._cache_hits,
+                        singleflight_hits=self._singleflight_hits,
+                        cached_urls=len(self._cache),
+                        peak_inflight=self._peak)
+
+
+def _parallel_map(fn, items, workers):
+    """Bounded map with deterministic input-order results."""
+    items = list(items)
+    workers = max(1, min(int(workers or 1), 8))
+    if workers == 1 or len(items) < 2:
+        return [fn(item) for item in items]
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="wx") as pool:
+        return list(pool.map(fn, items))
+
+
+def runtime_workers(value=None):
+    raw = os.environ.get("WX_WORKERS", "4") if value is None else value
+    try: return max(1, min(int(raw), 8))
+    except (TypeError, ValueError): return 4
 
 def phi(x): return 0.5*(1+math.erf(x/math.sqrt(2)))
 def f2c(f): return (f-32)*5/9
@@ -180,8 +325,8 @@ def parse_bucket(t):
 
 def fee(price, mp):
     """Комиссия тейкера, $/акцию. Ставка НЕ константа: она берётся из
-    параметров конкретного рынка (`MarketParams`), поэтому погода и крипта
-    больше не делят один зашитый множитель."""
+    параметров конкретного рынка (`MarketParams`), поэтому рынки с разными
+    ставками комиссии не делят один зашитый множитель."""
     return mp.fee_rate*price*(1-price)
 
 def allin(price, mp):
@@ -274,7 +419,7 @@ def parse_market_params(m):
     return MarketParams(fee_rate=fee_rate, tick=tick, min_notional=min_notional,
                         min_shares=0.0, source="market")
 
-def market_params(m, fetch=None):
+def market_params(m, fetch=None, enrich_clob=True):
     """Параметры рынка: нотионал (USDC) и шаг/комиссия из Gamma;
     min_shares (акции) из CLOB по conditionId.
     Два ограничения — из разных источников, смешивать нельзя.
@@ -306,8 +451,10 @@ def market_params(m, fetch=None):
         clob_shares = _num(raw, "minimum_order_size", "min_order_size") or 0.0
         p = MarketParams(fee_rate=fee_rate, tick=tick, min_notional=gamma_notional,
                          min_shares=clob_shares, source="clob")
-    else:
-        # Gamma дала полный набор; дополняем min_shares из CLOB если доступен
+    elif enrich_clob:
+        # Gamma дала полный набор; необязательно дополняем min_shares из CLOB.
+        # Массовый скрин отключает этот N-per-bucket проход: фактическая книга
+        # всё равно fail-closed проверяется перед каждым исполнимым лотом.
         cid = (m or {}).get("conditionId") or (m or {}).get("condition_id")
         if cid:
             try:
@@ -320,7 +467,7 @@ def market_params(m, fetch=None):
                 pass  # CLOB min_shares дополнительный; Gamma-параметры уже получены
     return p
 
-def event_params(markets, fetch=None):
+def event_params(markets, fetch=None, enrich_clob=True):
     """Параметры события: строгий режим — параметры обязаны быть у КАЖДОГО
     торгуемого бакета, иначе None. При расхождении берём худший вариант
     (дороже комиссия, крупнее шаг, нотионал и число акций)."""
@@ -328,7 +475,7 @@ def event_params(markets, fetch=None):
     if not markets: return None
     ps = []
     for m in markets:
-        p = market_params(m, fetch)
+        p = market_params(m, fetch, enrich_clob=enrich_clob)
         if p is None: return None
         ps.append(p)
     return MarketParams(fee_rate=max(p.fee_rate for p in ps),
@@ -401,7 +548,7 @@ def fam_of(k):
     return "ec" if "ecmwf" in k else "ic" if "icon" in k else "gm" if "gem" in k else "gf"
 
 BANKROLL = 100.0  # банкролл Дмитрия, $ — обновляется по мере роста счёта
-DAY_LIMIT = 15.0  # дневной лимит, $ — аварийный потолок
+DAY_LIMIT = 10.0  # две даты погоды × $5; общий аварийный потолок
 WEATHER_DAY_CAP = 5.0  # фаза валидации: суммарный потолок ПОГОДНЫХ входов одной даты (совет ревизии);
                        # после 30 записанных ставок с подтверждённой калибровкой поднять
 MIN_ORDER = 1.0   # запасной минимум ордера, $ — реальный берётся из параметров рынка
@@ -509,6 +656,15 @@ SLOPPY = []  # неэффективность книг: sum(ask) по город
 PARSE_FAIL = [0]  # счётчик нераспознанных бакетов (сигнал смены формата)
 COMBOS = []  # «шанс-комбо»: наборы бакетов с повышенной вероятностью выигрыша
 PAPER_FORECASTS = []  # полные city-day распределения; не ставки, а оценочный архив
+_STATE_LOCK = threading.RLock()
+
+def _state_append(target, value):
+    with _STATE_LOCK:
+        target.append(value)
+
+def _state_parse_fail(count):
+    with _STATE_LOCK:
+        PARSE_FAIL[0] += count
 
 def chance_combos(rows, mp, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
     """«Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка.
@@ -1041,9 +1197,9 @@ def portfolio_scan(wallet=None, fetch=None):
     events = []
     for slug, legs in open_ev.items():
         spent = round(sum(l["cost"] for l in legs), 2)
-        # бакеты температуры и землетрясений взаимоисключающие; страйки крипты — НЕТ
-        # (BTC выше 120k и выше 130k сыграют одновременно), там таблица исходов была бы ложной
-        exclusive = bool(re.match(r"(highest|lowest)-temperature-|how-many-", slug or ""))
+        # Только известные погодные бакеты моделируются как взаимоисключающие;
+        # остальные позиции показываются списком без выдуманной таблицы исходов.
+        exclusive = bool(re.match(r"(highest|lowest)-temperature-", slug or ""))
         scen = None
         if exclusive:
             scen = []
@@ -1107,6 +1263,15 @@ RES_FAILS = []  # fail-closed: рынки, не прошедшие контра�
 POOL_FAILS = []  # fail-closed: события с неполным распределением исходов
 PARAM_FAILS = []  # fail-closed: рынки без подтверждённых торговых параметров
 RES_SEEN = {}   # eslug -> отпечаток правил: смена правил внутри прогона = стоп
+
+def reset_run_state():
+    """A second in-process run must start clean, just like a new CLI process."""
+    with _STATE_LOCK:
+        for target in (SLOPPY, COMBOS, PAPER_FORECASTS,
+                       RES_FAILS, POOL_FAILS, PARAM_FAILS):
+            target.clear()
+        RES_SEEN.clear()
+        PARSE_FAIL[0] = 0
 
 RES_SOURCES = (
     ("wunderground", ("wunderground", "weather underground")),
@@ -1236,9 +1401,10 @@ def screen(slug, cal, dates, kind="max", fetch=None):
         if not evs or evs[0].get("closed"): continue
         ev = evs[0]
         # fail-closed контракт резолюции: источник, станция и единицы — из правил рынка
-        ok_res, det = check_resolution(eslug, ev.get("description"), unit, icao)
+        with _STATE_LOCK:
+            ok_res, det = check_resolution(eslug, ev.get("description"), unit, icao)
         if not ok_res:
-            RES_FAILS.append(f"{eslug}: {det['reason']}"); continue
+            _state_append(RES_FAILS, f"{eslug}: {det['reason']}"); continue
         tier = cal_tier(cal, lead)
         bucket_markets = [m for m in ev["markets"] if parse_bucket(m.get("groupItemTitle"))]
         vol = float(ev.get("volume") or 0)
@@ -1252,8 +1418,8 @@ def screen(slug, cal, dates, kind="max", fetch=None):
         titled = [m for m in ev["markets"] if m.get("groupItemTitle")]
         unparsed = [m for m in titled if not parse_bucket(m.get("groupItemTitle"))]
         if unparsed:                       # формат бакета сменился — распределение неполное
-            PARSE_FAIL[0] += len(unparsed)
-            POOL_FAILS.append(f"{eslug}: нераспознанные бакеты ({len(unparsed)}) — пул не считаем")
+            _state_parse_fail(len(unparsed))
+            _state_append(POOL_FAILS, f"{eslug}: нераспознанные бакеты ({len(unparsed)}) — пул не считаем")
             continue
         rows, incomplete = [], None
         for m in bucket_markets:
@@ -1282,27 +1448,27 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                              tid=tid_yes, tidYes=tid_yes, tidNo=tid_no,
                              p=p_raw, pLo=pLo_raw, pHi=pHi_raw, fams=fams_p))
         if incomplete:
-            POOL_FAILS.append(incomplete); continue
+            _state_append(POOL_FAILS, incomplete); continue
         if len(rows) < 3 or not coverage_ok([r["rng"] for r in rows]):
-            POOL_FAILS.append(f"{eslug}: распределение исходов неполное — усадку к рынку не считаем")
+            _state_append(POOL_FAILS, f"{eslug}: распределение исходов неполное — усадку к рынку не считаем")
             continue
         # усадка к рынку: нормализованный лог-пул p^λ · q^(1−λ) по ПОЛНОМУ набору бакетов
         for r, sh in zip(rows, log_pool(rows)):
             r["pS"], r["pLoS"], r["pHiS"] = sh["p"], sh["pLo"], sh["pHi"]
-        PAPER_FORECASTS.append(make_paper_forecast(
+        _state_append(PAPER_FORECASTS, make_paper_forecast(
             eslug, slug, ru, ds, lead, kind, unit, icao, tier, det, rows))
         # Ликвидность и торговые параметры запрещают реальную рекомендацию, но
         # не должны создавать survivorship bias в оценке вероятностной модели.
         if vol < 10000: continue
         # Торговые параметры КОНКРЕТНОГО рынка нужны только после того, как
         # независимый бумажный снимок уже сохранён. Торговля остаётся fail-closed.
-        mp = event_params(bucket_markets, fetch)
+        mp = event_params(bucket_markets, fetch, enrich_clob=False)
         if mp is None:
-            PARAM_FAILS.append(f"{eslug}: торговые параметры рынка не подтверждены"); continue
+            _state_append(PARAM_FAILS, f"{eslug}: торговые параметры рынка не подтверждены"); continue
         allasks = [m.get("bestAsk") for m in bucket_markets]
         if len(allasks) >= 5 and all(a is not None for a in allasks):
-            SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
-                               sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
+            _state_append(SLOPPY, dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
+                                      sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
         crows = []
         for r in rows:
             bb, ba, mid = r["bb"], r["ba"], r["mid"]
@@ -1342,272 +1508,173 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                                    stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c), mp=mp,
                                    token_id=r["tidNo"], p_cons=1-max(pLoS, pHiS)))
         for st in chance_combos(crows, mp):
-            COMBOS.append(dict(st, city=ru, date=ds, lead=lead, vol=int(vol), tier=tier,
-                               mp=mp, link=f"https://polymarket.com/event/{eslug}"))
+            _state_append(COMBOS, dict(st, city=ru, date=ds, lead=lead, vol=int(vol), tier=tier,
+                                      mp=mp, link=f"https://polymarket.com/event/{eslug}"))
     return trades
 
-MONTH_EN = {m: i+1 for i, m in enumerate(["January","February","March","April","May","June",
-                                          "July","August","September","October","November","December"])}
+def selected_city_slugs(slugs, calibrations, include_tier_c=False):
+    """Select the pre-outcome A/B universe used by the daily trading scan.
 
-def q_et_utc(y, mo, d, h, mi):
-    off = 4 if 3 < mo < 11 else 5
-    return datetime(y, mo, d, h, mi, tzinfo=timezone.utc).timestamp() + off*3600
+    Tier C calibration remains in the report, but its expensive ensemble and
+    market pass is opt-in.  Selection uses only historical calibration quality,
+    never the current outcome or current model edge.
+    """
+    slugs = list(slugs)
+    if include_tier_c:
+        return slugs
+    selected = []
+    for slug in slugs:
+        cal = calibrations.get(slug) or {}
+        tiers = (cal.get("tiers") or {}).values()
+        if cal.get("tier") in ("A", "B") or any(tier in ("A", "B") for tier in tiers):
+            selected.append(slug)
+    return selected
 
-def q_bucket(t):
-    t = (t or "").strip()
-    m = re.match(r"^≤(\d+)$", t)
-    if m: return (-1, int(m.group(1)))
-    m = re.match(r"^>(\d+)$", t)
-    if m: return (int(m.group(1))+1, 10**6)
-    m = re.match(r"^<(\d+)$", t)
-    if m: return (-1, int(m.group(1))-1)
-    m = re.match(r"^(\d+)\+$", t)
-    if m: return (int(m.group(1)), 10**6)
-    m = re.match(r"^(\d+)[–-](\d+)$", t)
-    if m: return (int(m.group(1)), int(m.group(2)))
-    m = re.match(r"^(\d+)$", t)
-    if m: return (int(m.group(1)), int(m.group(1)))
-    return None
 
-def q_prange(lo, hi, n_obs, lam):
-    lo = max(lo, n_obs)
-    if hi < n_obs: return 0.0
-    def pmf(k):
-        return math.exp(-lam + k*math.log(lam) - math.lgamma(k+1)) if lam > 0 else (1.0 if k == 0 else 0.0)
-    m_lo = lo - n_obs
-    if hi >= 10**5:
-        return max(0.0, 1.0 - sum(pmf(m) for m in range(0, m_lo)))
-    return sum(pmf(k - n_obs) for k in range(lo, hi+1))
+def selected_weather_dates(dates, calibration, include_tier_c=False):
+    if include_tier_c:
+        return list(dates)
+    return [(lead, value) for lead, value in dates
+            if cal_tier(calibration, lead) in ("A", "B")]
 
-def quake_scan(fetch=None):
-    """Контур №2: рынки числа землетрясений против Пуассона (USGS)."""
-    fetch = fetch or get
-    now_ts = datetime.now(timezone.utc).timestamp()
-    rates = {}
-    for mag in ("5.5", "6.5", "7.0"):
-        c = fetch(f"https://earthquake.usgs.gov/fdsnws/event/1/count?format=geojson&starttime=2025-08-01&endtime=2026-08-01&minmagnitude={mag}")
-        rates[mag] = c["count"]/365.0
-    d = fetch("https://gamma-api.polymarket.com/public-search?q=or%20above%20earthquakes&limit_per_type=12&events_status=active")
-    out = []
-    for e in d.get("events", []):
-        slug = e.get("slug","")
-        if not slug.startswith("how-many") or "earthquake" not in slug: continue
-        mm = re.search(r"(\d)pt(\d)", slug)
-        if not mm: continue
-        mag = f"{mm.group(1)}.{mm.group(2)}"
-        if mag not in rates: continue
-        full = fetch(f"https://gamma-api.polymarket.com/events?slug={slug}")[0]
-        if full.get("closed"): continue
-        w = re.search(r"between (\w+) (\d+), (\d+),? 12:00 AM ET,? and (\w+) (\d+), (\d+),? 11:59 PM ET", full["description"])
-        if w:
-            t0 = q_et_utc(int(w.group(3)), MONTH_EN[w.group(1)], int(w.group(2)), 0, 0)
-            t1 = q_et_utc(int(w.group(6)), MONTH_EN[w.group(4)], int(w.group(5)), 23, 59)
-        elif "in-2026" in slug:
-            t0 = q_et_utc(2026,1,1,0,0); t1 = q_et_utc(2026,12,31,23,59)
-        else: continue
-        if now_ts >= t1: continue
-        iso0 = datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        feats = fetch(f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime={iso0}&minmagnitude={mag}&limit=1000").get("features", [])
-        n_obs = len(feats)
-        borderline = sum(1 for f in feats if abs(f["properties"].get("mag", 0) - float(mag)) < 0.1)
-        t_rem = max(0.0, (t1 - now_ts)/86400.0)
-        lam = rates[mag] * t_rem
-        vol = float(full.get("volume") or 0)
-        volpen = 1 if vol < 10000 else 0
-        qmarkets = [m for m in full["markets"] if q_bucket(m.get("groupItemTitle"))]
-        mp = event_params(qmarkets, fetch)   # свои параметры рынка, не погодная константа
-        if mp is None:
-            PARAM_FAILS.append(f"{slug}: торговые параметры рынка не подтверждены"); continue
-        qasks = [m.get("bestAsk") for m in qmarkets]
-        ok_asks = len(qasks) >= 3 and all(a is not None for a in qasks)
-        q_sum_ask = round(sum(qasks), 3) if ok_asks else None
-        q_sum_allin = round(sum(allin(a, mp) for a in qasks), 3) if ok_asks else None
-        # «сумма асков < $1» — только кандидат; арбитраж засчитывается лишь после
-        # полных цен с комиссиями рынка, уровней книг и минимального ордера.
-        q_arb = (check_arb_legs([(_token_ids(m)[0], m.get("bestAsk")) for m in qmarkets], mp, fetch)
-                 if (q_sum_allin is not None and q_sum_allin < 0.995) else None)
-        picks, watch, qrows = [], [], []
-        for m in full["markets"]:
-            rng = q_bucket(m.get("groupItemTitle"))
-            if not rng: continue
-            bb, ba = m.get("bestBid"), m.get("bestAsk")
-            pr = m.get("outcomePrices"); pr = json.loads(pr) if isinstance(pr, str) else pr
-            mid = (bb+ba)/2 if (bb is not None and ba is not None) else (float(pr[0]) if pr else None)
-            if mid is None or vol < 500: continue
-            p   = q_prange(*rng, n_obs, lam)
-            pLo = q_prange(*rng, n_obs, lam*0.7)
-            pHi = q_prange(*rng, n_obs, lam*1.4)
-            qrows.append(dict(bucket=m.get("groupItemTitle"), p=p, pLo=pLo, pHi=pHi, ask=ba))
-            if ba is not None and 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                c = allin(ba, mp)
-                robust = pLo >= 1.5*c and pHi >= 1.5*c
-                conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="YES", bucket=m.get("groupItemTitle"), cost=round(c,3),
-                    p=round(p,3), mid=round(mid,3), ev=round(p*(1/c-1)-(1-p),2), conf=conf,
-                    stake=kelly_stake(p, min(pLo, pHi), c)))
-            if bb is not None and mid >= 0.25 and (mid-p) >= 0.15:
-                c = allin(1-bb, mp)
-                robust = (mid-pLo >= 0.10) and (mid-pHi >= 0.10)
-                conf = max(1, min(5, 3 + (1 if robust else 0) - volpen))
-                (picks if conf >= 4 else watch).append(dict(side="NO", bucket=m.get("groupItemTitle"), cost=round(c,3),
-                    p=round(p,3), mid=round(mid,3), ev=round((1-p)*(1/c-1)-p,2), conf=conf,
-                    stake=kelly_stake(1-p, 1-max(pLo, pHi), c)))
-        out.append(dict(title=full["title"], n_obs=n_obs, borderline=borderline, t_rem_days=round(t_rem,1),
-                        lam_rem=round(lam,2), vol=int(vol), picks=picks, watch=watch[:4],
-                        combos=chance_combos(qrows, mp)[-2:] if vol >= 500 else [], sum_ask=q_sum_ask, sum_allin=q_sum_allin, arb=q_arb,
-                        link=f"https://polymarket.com/event/{slug}"))
-    return out
 
-# ================= контур №3: крипта против опционов Deribit =================
-DMON = {m: i+1 for i, m in enumerate(["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"])}
+def calibration_refresh_plan(slugs, previous, on_date, refresh_days=7,
+                             include_tier_c=False):
+    """Refresh prior A/B daily and rotate non-traded C cities over a week."""
+    slugs = list(slugs)
+    previous = previous or {}
+    if include_tier_c or any(not isinstance(previous.get(slug), dict) for slug in slugs):
+        return slugs, {}
+    bucket = on_date.toordinal() % refresh_days
+    refresh, carry = [], {}
+    for slug in slugs:
+        old = previous[slug]
+        old_tiers = (old.get("tiers") or {}).values()
+        reliable = old.get("tier") in ("A", "B") or any(
+            tier in ("A", "B") for tier in old_tiers)
+        stable_bucket = int(hashlib.sha256(slug.encode("utf-8")).hexdigest()[:8], 16) % refresh_days
+        if reliable or stable_bucket == bucket:
+            refresh.append(slug)
+        else:
+            carry[slug] = dict(old)
+    return refresh, carry
 
-def load_surface(cur, fetch=None):
-    fetch = fetch or get
-    rows = fetch(f"https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency={cur}&kind=option")["result"]
-    surf = {}
-    for r in rows:
-        parts = r["instrument_name"].split("-")
-        m = re.match(r"^(\d+)([A-Z]{3})(\d{2})$", parts[1])
-        iv = r.get("mark_iv")
-        if not m or iv is None or iv <= 0: continue
-        exp = datetime(2000+int(m.group(3)), DMON[m.group(2)], int(m.group(1)), 8, 0, tzinfo=timezone.utc)
-        e = surf.setdefault(exp, {"F": r.get("underlying_price"), "iv": {}})
-        e["iv"].setdefault(float(parts[2]), []).append(iv)
-    for e in surf.values():
-        e["iv"] = {k: sum(v)/len(v) for k, v in e["iv"].items()}
-    return dict(sorted(surf.items()))
 
-def iv_at(strikes_iv, K):
-    ks = sorted(strikes_iv)
-    if not ks: return None
-    if K <= ks[0]: return strikes_iv[ks[0]]
-    if K >= ks[-1]: return strikes_iv[ks[-1]]
-    for a, b in zip(ks, ks[1:]):
-        if a <= K <= b:
-            w = (K-a)/(b-a)
-            return strikes_iv[a]*(1-w) + strikes_iv[b]*w
-
-def prob_above(surf, K, t_res, iv_mult=1.0):
-    now = datetime.now(timezone.utc)
-    exps = [e for e in surf if e > now]
-    if not exps: return None
-    before = [e for e in exps if e <= t_res]; after = [e for e in exps if e >= t_res]
-    T = (t_res-now).total_seconds()/(365*86400)
-    if T <= 0: return None
-    def w_of(exp):
-        iv = iv_at(surf[exp]["iv"], K)
-        if iv is None: return None
-        iv = iv*iv_mult/100.0
-        Te = (exp-now).total_seconds()/(365*86400)
-        return iv*iv*Te, Te
-    if before and after and before[-1] != after[0]:
-        a, b = w_of(before[-1]), w_of(after[0])
-        if not a or not b: return None
-        w = a[0] + (b[0]-a[0])*(T-a[1])/(b[1]-a[1])
+def build_report(fetch=None, workers=None, include_tier_c=False,
+                 progress=None, prior_report=None):
+    started = time.monotonic()
+    production_fetcher = None
+    if fetch is None:
+        production_fetcher = RunFetcher(get)
+        fetch = production_fetcher
+        workers = runtime_workers(workers)
     else:
-        exp = after[0] if after else before[-1]
-        r = w_of(exp)
-        if not r: return None
-        w = r[0]*T/r[1]
-    F = surf[after[0] if after else before[-1]]["F"]
-    if not F: return None
-    s = math.sqrt(max(w, 1e-9))
-    return phi((math.log(F/K) - 0.5*w)/s)
-
-def crypto_scan(fetch=None):
-    """Контур №3: рынки BTC/ETH above $K против риск-нейтральных вероятностей опционов."""
-    fetch = fetch or get
-    now = datetime.now(timezone.utc)
-    out = []
-    for cur, pref in (("BTC","bitcoin"), ("ETH","ethereum")):
-        try: surf = load_surface(cur, fetch)
-        except Exception as e:
-            out.append(dict(error=f"deribit {cur}: {str(e)[:60]}")); continue
-        for dd in range(0, 8):
-            d = now + timedelta(days=dd)
-            slug = f"{pref}-above-on-{MONTHS[d.month-1]}-{d.day}-{d.year}"
-            try: evs = fetch(f"https://gamma-api.polymarket.com/events?slug={slug}")
-            except Exception: continue
-            if not evs or evs[0].get("closed"): continue
-            ev = evs[0]
-            t_res = datetime(d.year, d.month, d.day, 16 if 3 < d.month < 11 else 17, 0, tzinfo=timezone.utc)
-            if t_res <= now: continue
-            vol = float(ev.get("volume") or 0)
-            if vol < 500: continue
-            volpen = 1 if vol < 10000 else 0
-            kmarkets = [m for m in ev["markets"]
-                        if re.match(r"^\d+$", (m.get("groupItemTitle") or "").replace(",", "").replace("$", ""))]
-            mp = event_params(kmarkets, fetch)   # комиссии крипты — СВОИ, не погодная константа
-            if mp is None:
-                PARAM_FAILS.append(f"{slug}: торговые параметры рынка не подтверждены"); continue
-            picks, watch, klist = [], [], []
-            for m in kmarkets:
-                t = (m.get("groupItemTitle") or "").replace(",", "").replace("$", "")
-                K = float(t)
-                bb, ba = m.get("bestBid"), m.get("bestAsk")
-                if bb is None or ba is None: continue
-                klist.append((K, bb, ba, _token_ids(m)))
-                mid = (bb+ba)/2
-                p = prob_above(surf, K, t_res)
-                if p is None: continue
-                pa = prob_above(surf, K, t_res, 0.9); pb = prob_above(surf, K, t_res, 1.1)
-                if pa is None or pb is None: continue
-                lo, hi = min(pa, pb), max(pa, pb)
-                row = dict(strike=int(K), p=round(p,3), mid=round(mid,3))
-                if 0.03 <= ba <= 0.25 and p >= 2*ba and p >= 0.08:
-                    c = allin(ba, mp)
-                    conf = max(1, min(5, 3 + (1 if lo >= 1.5*c else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
-                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
-                if mid >= 0.25 and (mid-p) >= 0.15:
-                    c = allin(1-bb, mp)
-                    conf = max(1, min(5, 3 + (1 if (mid-hi) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="NO", cost=round(c,3),
-                        ev=round((1-p)*(1/c-1)-p,2), conf=conf, stake=kelly_stake(1-p, 1-hi, c)))
-                if ba > 0.25 and (p-mid) >= 0.15:
-                    c = allin(ba, mp)
-                    conf = max(1, min(5, 3 + (1 if (lo-mid) >= 0.10 else 0) - volpen))
-                    (picks if conf >= 4 else watch).append(dict(row, side="YES", cost=round(c,3),
-                        ev=round(p*(1/c-1)-(1-p),2), conf=conf, stake=kelly_stake(p, lo, c)))
-            arbs = []
-            ks = sorted(klist)
-            for (k1, b1, a1, t1), (k2, b2, a2, t2) in zip(ks, ks[1:]):
-                c = allin(a1, mp) + allin(1 - b2, mp)   # полные цены обеих ног
-                if c >= 1.0: continue
-                arb = check_arb_legs([(t1[0], a1), (t2[1], 1 - b2)], mp, fetch)
-                arb.update(k1=int(k1), k2=int(k2), cost=round(c, 3))
-                if arb["ok"]:                            # только исполнимая связка считается связкой
-                    arbs.append(arb)
-            if picks or watch or arbs:
-                out.append(dict(title=ev["title"], date=d.strftime("%Y-%m-%d"), vol=int(vol),
-                                picks=picks, watch=watch[:3], arbs=arbs,
-                                link=f"https://polymarket.com/event/{slug}"))
-    return out
-
-def main(fetch=None):
-    fetch = fetch or get
+        # Offline/injected callers remain deterministic unless they explicitly
+        # opt into concurrency.
+        workers = runtime_workers(1 if workers is None else workers)
+    reset_run_state()
     now = datetime.now(timezone.utc)
     dates = [(1, (now+timedelta(days=1)).strftime("%Y-%m-%d")), (2, (now+timedelta(days=2)).strftime("%Y-%m-%d"))]
-    calib, trades, errors = {}, [], []
-    for slug in ST:
-        try: calib[slug] = calibrate(slug, fetch=fetch)
+    prior_calib_json = (prior_report or {}).get("calib_json") or {}
+    prior_max = prior_calib_json.get("cities") or {}
+    prior_min = prior_calib_json.get("cities_min") or {}
+    prior_date = prior_calib_json.get("cal_date")
+    refresh_max, carried_max = calibration_refresh_plan(
+        ST, prior_max, now.date(), include_tier_c=include_tier_c)
+    refresh_min, carried_min = calibration_refresh_plan(
+        MIN_SLUGS, prior_min, now.date(), include_tier_c=include_tier_c)
+    for value in list(carried_max.values()) + list(carried_min.values()):
+        value["carried_from"] = prior_date
+    calib, trades, errors = dict(carried_max), [], []
+    stage_times = {}
+    progress_lock = threading.Lock()
+    progress_counts = {}
+
+    def begin_stage(name, total=None):
+        progress_counts[name] = 0
+        if progress:
+            progress(dict(stage=name, completed=0, total=total))
+        return time.monotonic()
+
+    def finish_item(name, total):
+        if not progress: return
+        with progress_lock:
+            progress_counts[name] += 1
+            completed = progress_counts[name]
+        progress(dict(stage=name, completed=completed, total=total))
+
+    def finish_stage(name, stage_started):
+        stage_times[name] = round(time.monotonic()-stage_started, 2)
+
+    def calibrate_max(slug):
+        try:
+            return slug, calibrate(slug, fetch=fetch), None
         except Exception as e:
-            calib[slug] = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS.get(slug,0.0), n=0, std=None,
-                               tier="C", tiers={"1": "C", "2": "C"})
-            errors.append(f"calib {slug}: {e}")
-    for slug in ST:
-        try: trades += screen(slug, calib[slug], dates, fetch=fetch)
-        except Exception as e: errors.append(f"screen {slug}: {e}")
-    calib_min = {}
-    for slug in MIN_SLUGS:
-        try: calib_min[slug] = calibrate(slug, is_min=True, fetch=fetch)
+            fallback = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS.get(slug,0.0), n=0, std=None,
+                            tier="C", tiers={"1": "C", "2": "C"})
+            return slug, fallback, f"calib {slug}: {e}"
+        finally:
+            finish_item("calibration_max", len(refresh_max))
+
+    stage_started = begin_stage("calibration_max", len(refresh_max))
+    for slug, value, error in _parallel_map(calibrate_max, refresh_max, workers):
+        calib[slug] = value
+        if error: errors.append(error)
+    finish_stage("calibration_max", stage_started)
+
+    screen_max_slugs = selected_city_slugs(ST, calib, include_tier_c)
+
+    def screen_max(slug):
+        try:
+            scoped_dates = selected_weather_dates(dates, calib[slug], include_tier_c)
+            return screen(slug, calib[slug], scoped_dates, fetch=fetch), None
         except Exception as e:
-            calib_min[slug] = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS_MIN.get(slug,0.0), n=0, std=None,
-                                   tier="C", tiers={"1": "C", "2": "C"})
-            errors.append(f"calib_min {slug}: {e}")
-    for slug in MIN_SLUGS:
-        try: trades += screen(slug, calib_min[slug], dates, kind="min", fetch=fetch)
-        except Exception as e: errors.append(f"screen_min {slug}: {e}")
+            return [], f"screen {slug}: {e}"
+        finally:
+            finish_item("weather_max", len(screen_max_slugs))
+
+    stage_started = begin_stage("weather_max", len(screen_max_slugs))
+    for rows, error in _parallel_map(screen_max, screen_max_slugs, workers):
+        trades += rows
+        if error: errors.append(error)
+    finish_stage("weather_max", stage_started)
+
+    calib_min = dict(carried_min)
+
+    def calibrate_min(slug):
+        try:
+            return slug, calibrate(slug, is_min=True, fetch=fetch), None
+        except Exception as e:
+            fallback = dict(fams={"1": {}, "2": {}}, bias=REF_BIAS_MIN.get(slug,0.0), n=0, std=None,
+                            tier="C", tiers={"1": "C", "2": "C"})
+            return slug, fallback, f"calib_min {slug}: {e}"
+        finally:
+            finish_item("calibration_min", len(refresh_min))
+
+    stage_started = begin_stage("calibration_min", len(refresh_min))
+    for slug, value, error in _parallel_map(calibrate_min, refresh_min, workers):
+        calib_min[slug] = value
+        if error: errors.append(error)
+    finish_stage("calibration_min", stage_started)
+
+    screen_min_slugs = selected_city_slugs(MIN_SLUGS, calib_min, include_tier_c)
+
+    def screen_min(slug):
+        try:
+            scoped_dates = selected_weather_dates(dates, calib_min[slug], include_tier_c)
+            return screen(slug, calib_min[slug], scoped_dates, kind="min", fetch=fetch), None
+        except Exception as e:
+            return [], f"screen_min {slug}: {e}"
+        finally:
+            finish_item("weather_min", len(screen_min_slugs))
+
+    stage_started = begin_stage("weather_min", len(screen_min_slugs))
+    for rows, error in _parallel_map(screen_min, screen_min_slugs, workers):
+        trades += rows
+        if error: errors.append(error)
+    finish_stage("weather_min", stage_started)
+
+    stage_started = begin_stage("execution", None)
     drift = {s: round(calib[s]["bias"]-REF_BIAS.get(s,0),2) for s in ST
              if calib[s]["n"] > 0 and abs(calib[s]["bias"]-REF_BIAS.get(s,0)) > 1.0}
     picks = sorted([t for t in trades if t["conf"] >= 4], key=lambda t: -t["conf"]*t["ev"])
@@ -1644,7 +1711,7 @@ def main(fetch=None):
         try:
             evx = fetch(f"https://gamma-api.polymarket.com/events?slug={x['eslug']}")[0]
             bms = [m for m in evx["markets"] if parse_bucket(m.get("groupItemTitle"))]
-            mpx = event_params(bms, fetch)
+            mpx = event_params(bms, fetch, enrich_clob=False)
             if mpx is None:
                 x["exec_err"] = "торговые параметры рынка не подтверждены"; x["arb_ok"] = False; continue
             legs = [(_token_ids(m)[0], m.get("bestAsk")) for m in bms]
@@ -1671,12 +1738,8 @@ def main(fetch=None):
         c.pop("tids", None)
         mp = c.pop("mp", None)
         if mp is not None: c["market_params"] = mp._asdict()
-    try: quakes = quake_scan(fetch)
-    except Exception as e:
-        quakes = []; errors.append(f"quakes: {e}")
-    try: crypto = crypto_scan(fetch)
-    except Exception as e:
-        crypto = []; errors.append(f"crypto: {e}")
+    finish_stage("execution", stage_started)
+
     # «Вердикт дня»: по одной самой реальной ставке на категорию — или честный пропуск
     def wx_verdict(combo, ps):
         if combo is not None:
@@ -1684,30 +1747,22 @@ def main(fetch=None):
         p = next((t for t in ps if t["conf"] >= 5 and t.get("robust") and (t.get("stake") or 0) > 0), None)
         if p: return dict({k: v for k, v in p.items() if k not in ("tid",)}, kind="одиночная")
         return None
-    def ev_verdict(markets, want_arb_key=None):
-        best = None
-        for mkt in markets:
-            if want_arb_key == "sum" and (mkt.get("arb") or {}).get("ok"):
-                return dict(kind="исполнимый арбитраж", market=mkt["title"], sum_ask=mkt["sum_ask"],
-                            sum_allin=mkt["sum_allin"], exec_sets=mkt["arb"]["exec_sets"],
-                            exec_cost=mkt["arb"]["exec_cost"], exec_profit=mkt["arb"]["exec_profit"], link=mkt["link"])
-            if want_arb_key == "arbs" and mkt.get("arbs"):
-                return dict(kind="арбитраж-связка", market=mkt["title"], arbs=mkt["arbs"], link=mkt["link"])
-            for pk in mkt.get("picks", []):
-                if pk["conf"] >= 4 and (best is None or pk["ev"] > best["ev"]):
-                    best = dict(pk, kind="одиночная", market=mkt["title"], link=mkt["link"])
-        return best
     verdicts = dict(
         max=wx_verdict(approved["max"], [t for t in picks if "(мин)" not in t["city"]]),
         min=wx_verdict(approved["min"], [t for t in picks if "(мин)" in t["city"]]),
-        quakes=ev_verdict(quakes, "sum") or ev_verdict(quakes),
-        crypto=ev_verdict(crypto, "arbs") or ev_verdict(crypto),
     )
     budget = allocator.snapshot()
     budget["rejections"] = [dict(city=c["city"], date=c["date"], buckets=c["buckets"],
                                  why=c.get("exec_why") or "не выбран")
                             for c in combo_top if not c.get("exec_ok")][:10]
-    print(json.dumps(dict(
+    stage_started = begin_stage("finalize", None)
+    html_health = dict(coverage=check_coverage(fetch), parse_fails=PARSE_FAIL[0])
+    paper_forecasts = sorted(
+        PAPER_FORECASTS,
+        key=lambda row: (row.get("weather_date", ""), row.get("kind", ""),
+                         row.get("city_slug", ""), row.get("event_slug", "")))
+    finish_stage("finalize", stage_started)
+    report = dict(
         generated=now.strftime("%Y-%m-%d %H:%M UTC"),
         bankroll=BANKROLL, day_limit=DAY_LIMIT, min_order=MIN_ORDER,
         budget=budget, portfolio=portfolio,
@@ -1715,16 +1770,39 @@ def main(fetch=None):
                           fee="тейкер: rate·цена·(1−цена) с акции, rate берётся из параметров конкретного рынка",
                           min_leg_ask=0.03, combo_min_ev=COMBO_MIN_EV, combo_min_legs=COMBO_MIN_LEGS,
                           note="фаза валидации: усадка к рынку, дешёвые хвосты запрещены"),
-        res_checks=RES_FAILS, pool_checks=POOL_FAILS, param_checks=PARAM_FAILS,
+        res_checks=sorted(RES_FAILS), pool_checks=sorted(POOL_FAILS), param_checks=sorted(PARAM_FAILS),
         verdicts=verdicts,
         calib_json=dict(cal_date=now.strftime("%Y-%m-%d"), cities=calib, cities_min=calib_min),
         picks=picks[:12], watch=watch[:10], chance_combos=combo_top[:10], series_pick=series,
         bias_drift_over_1C=drift, errors=errors,
         pure_arb=pure_arb, most_inefficient=sloppy[:5],
-        html_health=dict(coverage=check_coverage(fetch), parse_fails=PARSE_FAIL[0]),
-        paper_forecasts=PAPER_FORECASTS,
-        quakes=quakes, crypto=crypto,
-    ), ensure_ascii=False, indent=1))
+        html_health=html_health, paper_forecasts=paper_forecasts,
+        runtime=dict(workers=workers,
+                     elapsed_seconds=round(time.monotonic()-started, 2),
+                     stages=stage_times,
+                     network=(production_fetcher.stats() if production_fetcher else None),
+                     scope=dict(include_tier_c=bool(include_tier_c),
+                                refreshed_max_calibrations=len(refresh_max),
+                                carried_max_tier_c=sorted(carried_max),
+                                included_max_cities=len(screen_max_slugs),
+                                included_max_city_days=sum(len(selected_weather_dates(
+                                    dates, calib[slug], include_tier_c)) for slug in screen_max_slugs),
+                                skipped_max_tier_c=sorted(set(ST)-set(screen_max_slugs)),
+                                refreshed_min_calibrations=len(refresh_min),
+                                carried_min_tier_c=sorted(carried_min),
+                                included_min_cities=len(screen_min_slugs),
+                                included_min_city_days=sum(len(selected_weather_dates(
+                                    dates, calib_min[slug], include_tier_c)) for slug in screen_min_slugs),
+                                skipped_min_tier_c=sorted(set(MIN_SLUGS)-set(screen_min_slugs))),
+                     bulk_weather_optional_clob_enrichment=False),
+    )
+    return report
+
+
+def main(fetch=None, workers=None, include_tier_c=False):
+    print(json.dumps(build_report(fetch=fetch, workers=workers,
+                                  include_tier_c=include_tier_c),
+                     ensure_ascii=False, indent=1))
 
 if __name__ == "__main__":
     main()
