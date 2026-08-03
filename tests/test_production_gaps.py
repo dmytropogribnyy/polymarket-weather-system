@@ -1,5 +1,7 @@
 """RED tests for the 5 production-contract gaps identified in review.
 These tests exercise actual production code paths and must fail on head 9978499."""
+import json
+import os
 import unittest
 from decimal import Decimal
 
@@ -195,10 +197,21 @@ class TestWebParityIncludesCanonical(unittest.TestCase):
     
     def test_web_parity_fixture_includes_canonical_fees(self):
         """Parity fixtures must include canonical fee schedule to test web parser."""
-        # This is a marker test: the actual parity runner and fixtures
-        # must be updated to include feesEnabled/feeSchedule payloads
-        # Currently web parseMarketParams only reads taker_base_fee aliases
-        self.skipTest("Web parity does not yet include canonical fee fixtures")
+        with open(os.path.join(os.path.dirname(__file__), "parity", "parity_cases.json")) as f:
+            cases = json.load(f)
+        
+        # Проверяем, что хотя бы один кейс market_params использует canonical feesEnabled/feeSchedule
+        has_canonical = False
+        for case in cases.get("market_params", []):
+            for market in case.get("markets", []):
+                if "feesEnabled" in market and "feeSchedule" in market:
+                    has_canonical = True
+                    # Проверяем структуру
+                    self.assertIn("rate", market["feeSchedule"])
+                    self.assertIn("exponent", market["feeSchedule"])
+                    self.assertIn("takerOnly", market["feeSchedule"])
+        
+        self.assertTrue(has_canonical, "parity_cases.json должен включать хотя бы один canonical fee fixture")
 
 
 if __name__ == "__main__":

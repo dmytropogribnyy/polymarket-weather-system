@@ -34,6 +34,38 @@
         {"taker_base_fee": 0.05, "minimum_tick_size": 0.01, "minimum_order_size": 1},
         {"minimum_tick_size": 0.01}
       ]
+    },
+    {
+      "name": "canonical fee schedule weather 0.05",
+      "markets": [
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.05", "exponent": 2, "takerOnly": true},
+         "minimum_tick_size": 0.01, "minimum_order_size": 1},
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.05", "exponent": 2, "takerOnly": true},
+         "minimum_tick_size": 0.01, "minimum_order_size": 1}
+      ]
+    },
+    {
+      "name": "canonical fee schedule crypto 0.07",
+      "markets": [
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.07", "exponent": 2, "takerOnly": true},
+         "minimum_tick_size": 0.001, "minimum_order_size": 2},
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.07", "exponent": 2, "takerOnly": true},
+         "minimum_tick_size": 0.001, "minimum_order_size": 2}
+      ]
+    },
+    {
+      "name": "canonical unsupported exponent",
+      "markets": [
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.05", "exponent": 1, "takerOnly": true},
+         "minimum_tick_size": 0.01, "minimum_order_size": 1}
+      ]
+    },
+    {
+      "name": "canonical takerOnly false",
+      "markets": [
+        {"feesEnabled": true, "feeSchedule": {"rate": "0.05", "exponent": 2, "takerOnly": false},
+         "minimum_tick_size": 0.01, "minimum_order_size": 1}
+      ]
     }
   ],
   "prices": [
