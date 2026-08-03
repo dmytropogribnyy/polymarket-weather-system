@@ -150,17 +150,20 @@ class TestREDTestsExerciseProduction(unittest.TestCase):
     """Item 4: Tests must exercise actual production code paths."""
     
     def test_exact_decimal_cap_via_combo_lots(self):
-        """The Decimal cap comparison must be tested through actual combo_lots call.
-        Verifies that min_total > cap uses exact Decimal comparison, not rounded cents."""
-        from decimal import Decimal, ROUND_HALF_UP
+        """The Decimal cap comparison must reject when min_total > cap even by a tiny amount.
+        
+        This exercises the actual combo_lots production path with values that would pass
+        if the comparison used rounded cents but correctly fail with exact Decimal.
+        
+        Setup: Two legs, each costing exactly $0.7451 → total $1.4902.
+        Cap: $1.49. Since 1.4902 > 1.49 exactly, the bet must be rejected.
+        With _cents() comparison: _cents(1.4902) = 1.49 = cap → would incorrectly pass.
+        With exact Decimal: 1.4902 > 1.49 → correctly rejected."""
+        from decimal import Decimal
         
         mp = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=0.745,
                             min_shares=0.0, source="test")
         
-        # Each leg will cost exactly $0.7451 (minimum)
-        # Two legs: sum = Decimal("1.4902")
-        # cap = Decimal("1.49")
-        # Rounded: _cents(1.4902) = 1.50, but 1.4902 > 1.49 exactly
         step = dict(buckets=["30°C", "31°C"], asks=[0.30, 0.30],
                     tids=["tok30", "tok31"], leg_p=[0.45, 0.45],
                     cost=0.60, stake=1.50)
@@ -169,30 +172,22 @@ class TestREDTestsExerciseProduction(unittest.TestCase):
             if "book?token_id=" in url:
                 # Price 0.30, fee = 0.05 × 0.30 × 0.70 = 0.0105
                 # All-in: 0.3105 per share
-                # To get exactly $0.7451: need 0.7451 / 0.3105 = 2.399 shares
-                # Provide exactly 2.399 shares
-                return dict(asks=[{"price": "0.30", "size": "2.399"}],
-                            min_order_size="1", tick_size="0.01")
+                # To get exactly $0.7451: 0.7451 / 0.3105 = 2.3993... shares
+                # Provide enough shares to reach $0.7451
+                return dict(asks=[{"price": "0.30", "size": "2.4"}],
+                            min_order_size="0.745", tick_size="0.01")
             raise RuntimeError(f"unexpected: {url}")
         
-        # budget_left = 1.49 → cap = 1.49 (exact)
+        # budget_left = 1.49 → should reject since 2 × 0.7451 = 1.4902 > 1.49
         ex = w.combo_lots(step, mp, budget_left=1.49, fetch=fake_fetch)
         
-        # Mathematical verification: if using _cents() for comparison,
-        # _cents(min_total) could equal _cents(cap) even when min_total > cap
-        # The current code MUST use exact Decimal comparison
-        
-        # With min_notional=0.745, each leg needs at least that
-        # The book provides 2.399 shares @ 0.3105 all-in = $0.7447 ≈ $0.745
-        # Two legs ≈ $1.489 or $1.490, which might be ≤ $1.49
-        
-        # Actually, let me verify the code has the fix in place by checking
-        # that the comparison is done before rounding
-        self.assertIn("if min_total > cap:", 
-                     open("/home/runner/work/polymarket-weather-system/polymarket-weather-system/src/wx_daily.py").read(),
-                     "combo_lots must use exact Decimal comparison 'min_total > cap'")
-        
-        # The fix is already in place (line 610), so this test documents the requirement
+        # Assert: the bet must be REJECTED (ok=False) because min_total exceeds cap
+        self.assertFalse(ex["ok"], "combo_lots should reject when min_total > cap")
+        self.assertIn("минимальн", ex["reason"].lower(),
+                     f"Rejection reason should mention minimum: {ex['reason']}")
+        # Verify no executable lots were returned
+        self.assertEqual(len(ex.get("lots", [])), 0,
+                        "No lots should be approved when minimums exceed cap")
 
 
 class TestWebParityIncludesCanonical(unittest.TestCase):

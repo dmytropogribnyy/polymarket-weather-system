@@ -338,6 +338,7 @@ def event_params(markets, fetch=None):
 
 LAMBDA = 0.25    # вес СВОЕЙ модели в пуле с рынком на фазе валидации (совет внешней ревизии)
 EPS_TICK = 0.001 # минимальный тик цены
+EPS_MONEY = Decimal("1e-6")  # допуск для сравнений денег (защита от артефактов float→Decimal)
 
 def fam_prob(day, rng, unit, fcal, lead, dbias=0.0):
     """P(бакет): равный вес каждому семейству моделей; каждому члену — поправка ЕГО
@@ -529,9 +530,12 @@ def _walk_book(levels, mp, target_shares, usd_cap):
     Возврат (shares, usd, limit_price) или None, если минимум не набирается.
     Деньги считаются десятичными дробями: нога ровно на $1.00 обязана пройти —
     двоичная 0.9999999999999999 не должна её отбраковывать."""
-    min_notional = _cents(mp.min_notional)
+    # Округлённый минимум для практических расчётов в цикле
+    min_notional_rounded = _cents(mp.min_notional)
+    # Точный минимум для финальной проверки
+    min_notional_exact = Decimal(str(mp.min_notional))
     cap = _cents(usd_cap, rounding=ROUND_DOWN)
-    if cap < min_notional: return None
+    if cap < min_notional_rounded: return None
     # Минимальное число акций — бо́льшее из требования рынка (CLOB) и целевого числа
     want_sh = Decimal(str(max(target_shares, mp.min_shares)))
     sh, usd, lim = Decimal("0"), Decimal("0"), None
@@ -541,16 +545,18 @@ def _walk_book(levels, mp, target_shares, usd_cap):
         a = p + Decimal(str(mp.fee_rate))*p*(1-p)     # полная цена акции
         if a <= 0: continue
         take = max(want_sh - sh, Decimal("0"))
-        if usd < min_notional:                         # USDC-нотионал — обязателен
-            take = max(take, (min_notional - usd)/a)
+        if usd < min_notional_rounded:                 # USDC-нотионал — обязателен
+            take = max(take, (min_notional_rounded - usd)/a)
         if take <= 0: break
         take = min(take, size)
         if usd + a*take > cap:                         # бюджет ноги не превышаем
             take = (cap - usd)/a
             if take <= 0: break
         sh += take; usd += a*take; lim = price
-        if sh >= want_sh and usd >= min_notional: break
-    if sh <= 0 or _cents(usd) < min_notional: return None
+        if sh >= want_sh and usd >= min_notional_rounded: break
+    # Финальная проверка: точное сравнение без округления, но с малым допуском
+    # для артефактов преобразования float→Decimal (нога ровно на $1.00 обязана пройти)
+    if sh <= 0 or usd + EPS_MONEY < min_notional_exact: return None
     return sh, usd, lim
 
 def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
