@@ -1248,7 +1248,6 @@ def screen(slug, cal, dates, kind="max", fetch=None):
         if len(allasks) >= 5 and all(a is not None for a in allasks):
             SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
                                sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
-        if vol < 10000: continue
         volpen = 1 if vol < 30000 else 0
         day = {"all": [], "ec": [], "gf": [], "ic": [], "gm": []}
         for k in keys:
@@ -1298,6 +1297,9 @@ def screen(slug, cal, dates, kind="max", fetch=None):
             r["pS"], r["pLoS"], r["pHiS"] = sh["p"], sh["pLo"], sh["pHi"]
         PAPER_FORECASTS.append(make_paper_forecast(
             eslug, slug, ru, ds, lead, kind, unit, icao, tier, det, rows))
+        # Ликвидность запрещает реальную рекомендацию, но не должна создавать
+        # survivorship bias в бумажной оценке полной модели.
+        if vol < 10000: continue
         crows = []
         for r in rows:
             bb, ba, mid = r["bb"], r["ba"], r["mid"]
