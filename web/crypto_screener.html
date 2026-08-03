@@ -241,7 +241,8 @@ async function scan(){
           }
         }
         if (!rows.length) continue;
-        // связка страйков: YES $K1 + NO $K2 (K1<K2) платит минимум $1 при любой цене
+        // связка страйков: YES $K1 + NO $K2 (K1<K2). Цены здесь БЕЗ комиссии тейкера и без
+        // проверки объёма книг — это кандидат, а не гарантированная связка.
         const arbs = [];
         const ks = klist.slice().sort((a,z) => a[0]-z[0]);
         for (let i = 0; i+1 < ks.length; i++){
@@ -254,7 +255,7 @@ async function scan(){
         if (vol >= 500 && arbs.length && !arbFound) arbFound = { title: ev.title, a: arbs[0], slug };
         if (vol >= 500) for (const t of good) if (!bestGood || t.ev > bestGood.ev) bestGood = { ...t, title: ev.title, slug };
         const chips = [];
-        if (vol >= 500 && arbs.length) chips.push(`<span class="chip s">★ СВЯЗКА: YES $${arbs[0].k1.toLocaleString("en-US")} + NO $${arbs[0].k2.toLocaleString("en-US")} за ${fmtC(arbs[0].cost)} — платит минимум $1 при любой цене</span>`);
+        if (vol >= 500 && arbs.length) chips.push(`<span class="chip s">Кандидат в связку: YES $${arbs[0].k1.toLocaleString("en-US")} + NO $${arbs[0].k2.toLocaleString("en-US")} за ${fmtC(arbs[0].cost)} БЕЗ комиссий — прибыль подтверждается только после комиссии тейкера и расчёта исполнимых лотов по книгам</span>`);
         if (vol < 500) chips.push(`<span class="chip s">⚠ пустая книга ($${Math.round(vol)}) — цены-заглушки, показано справочно</span>`);
         else if (vol < 10000) chips.push(`<span class="chip w">⚠ тонкий рынок ($${Math.round(vol).toLocaleString("en-US")}) — только лимитные ордера</span>`);
         html += `<div class="card">
@@ -271,7 +272,7 @@ async function scan(){
       }
     }
     let verdict;
-    if (arbFound) verdict = `<div class="card" style="border-left:3px solid var(--good-text)"><b style="color:var(--good-text)">★ ВЕРДИКТ (крипта): ГАРАНТИРОВАННАЯ СВЯЗКА</b> — ${esc(arbFound.title)}: купить YES $${arbFound.a.k1.toLocaleString("en-US")} + NO $${arbFound.a.k2.toLocaleString("en-US")} суммарно за ${fmtC(arbFound.a.cost)} → выплата минимум $1 при любой цене (между страйками — $2), гарантированный профит ≥ ${fmtC(1-arbFound.a.cost)} с комплекта. Лимитники, начни с $2-3. <a class="mlink" href="https://polymarket.com/event/${arbFound.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
+    if (arbFound) verdict = `<div class="card"><b>ВЕРДИКТ (крипта): кандидат в связку, ставки нет</b> — ${esc(arbFound.title)}: YES $${arbFound.a.k1.toLocaleString("en-US")} + NO $${arbFound.a.k2.toLocaleString("en-US")} за ${fmtC(arbFound.a.cost)} по котировкам БЕЗ комиссий. Гарантией это станет только после расчёта полной цены с комиссией конкретного рынка и исполнимых лотов по обеим книгам — см. ночной отчёт (src/wx_daily.py, crypto_scan). <a class="mlink" href="https://polymarket.com/event/${arbFound.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
     else if (bestGood) verdict = `<div class="card" style="border-left:3px solid var(--good-text)"><b style="color:var(--good-text)">★ ВЕРДИКТ (крипта): СТАВИТЬ</b> — ${esc(bestGood.title)}: КУПИТЬ ${bestGood.side} «${esc(bestGood.b)}» до ${fmtC(bestGood.cost)} · опционы ${fmtP(bestGood.p)} vs рынок ${fmtP(bestGood.mid)} · ${bestGood.conf}/5 · <b>размер $${(kellyStake(bestGood.pBase ?? bestGood.p, bestGood.pCons, bestGood.cost, bankroll, cap) || 1).toFixed(2)}</b> (четверть Келли от банкролла $${bankroll}) · исполнение: цена &lt;10¢ — ЛИМИТ по аску, дороже — маркет с проверкой средней цены. Разрывы крипты живут часами — проверь цену перед входом. <a class="mlink" href="https://polymarket.com/event/${bestGood.slug}" target="_blank" rel="noopener">открыть →</a></div>`;
     else verdict = `<div class="card"><b>ВЕРДИКТ (крипта): реальных ставок нет — пропуск.</b> Толпа сейчас выровнена с опционным рынком; сторож (каждые 6 ч) следит автоматически.</div>`;
     res.innerHTML = verdict + (html || `<div class="card"><div class="empty-note">Активных рынков «above» не найдено.</div></div>`);

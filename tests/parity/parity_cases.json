@@ -1,0 +1,1903 @@
+{
+  "_readme": [
+    "Общие для JS и Python кейсы. Числа зафиксированы руками: если ядро",
+    "web/weather_screener.html и src/wx_daily.py разойдутся хоть на цент или на",
+    "слово вердикта, tests/test_parity.py упадёт. Сеть не нужна: книги, параметры",
+    "рынка и ансамбли лежат прямо здесь."
+  ],
+  "market_params": [
+    {
+      "name": "полные поля рынка",
+      "markets": [
+        {
+          "taker_base_fee": 0.05,
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        },
+        {
+          "taker_base_fee": 0.05,
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    },
+    {
+      "name": "ставка в базисных пунктах и худший из бакетов",
+      "markets": [
+        {
+          "tbf": 500,
+          "mts": 0.01,
+          "mos": 1
+        },
+        {
+          "tbf": 700,
+          "mts": 0.001,
+          "mos": 2
+        }
+      ]
+    },
+    {
+      "name": "нет комиссии — параметры не подтверждены",
+      "markets": [
+        {
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    },
+    {
+      "name": "комиссия вне санитарных границ",
+      "markets": [
+        {
+          "taker_base_fee": 0.9,
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    },
+    {
+      "name": "один бакет без параметров — событие не торгуется",
+      "markets": [
+        {
+          "taker_base_fee": 0.05,
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        },
+        {
+          "minimum_tick_size": 0.01
+        }
+      ]
+    },
+    {
+      "name": "canonical fee schedule weather 0.05",
+      "markets": [
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.05",
+            "exponent": 2,
+            "takerOnly": true
+          },
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        },
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.05",
+            "exponent": 2,
+            "takerOnly": true
+          },
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    },
+    {
+      "name": "canonical fee schedule crypto 0.07",
+      "markets": [
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.07",
+            "exponent": 2,
+            "takerOnly": true
+          },
+          "minimum_tick_size": 0.001,
+          "minimum_order_size": 2
+        },
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.07",
+            "exponent": 2,
+            "takerOnly": true
+          },
+          "minimum_tick_size": 0.001,
+          "minimum_order_size": 2
+        }
+      ]
+    },
+    {
+      "name": "canonical unsupported exponent",
+      "markets": [
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.05",
+            "exponent": 1,
+            "takerOnly": true
+          },
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    },
+    {
+      "name": "canonical takerOnly false",
+      "markets": [
+        {
+          "feesEnabled": true,
+          "feeSchedule": {
+            "rate": "0.05",
+            "exponent": 2,
+            "takerOnly": false
+          },
+          "minimum_tick_size": 0.01,
+          "minimum_order_size": 1
+        }
+      ]
+    }
+  ],
+  "prices": [
+    {
+      "price": 0.1,
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      }
+    },
+    {
+      "price": 0.5,
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      }
+    },
+    {
+      "price": 0.03,
+      "mp": {
+        "fee_rate": 0.07,
+        "tick": 0.001,
+        "min_order": 2,
+        "min_shares": 0
+      }
+    },
+    {
+      "price": 0.97,
+      "mp": {
+        "fee_rate": 0.02,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      }
+    }
+  ],
+  "fam_prob": [
+    {
+      "name": "калибровка на все семейства, лид 1",
+      "unit": "C",
+      "lead": 1,
+      "dbias": 0,
+      "range": [
+        30.5,
+        31.5
+      ],
+      "day": {
+        "ec": [
+          31.1,
+          30.6,
+          31.4,
+          30.9,
+          31.0,
+          31.2,
+          30.8,
+          31.3
+        ],
+        "gf": [
+          30.4,
+          30.9,
+          31.1,
+          30.7,
+          30.6,
+          31.0,
+          30.5,
+          30.8
+        ],
+        "ic": [
+          31.5,
+          31.2,
+          31.8,
+          31.0,
+          31.4,
+          31.6,
+          31.1,
+          31.3
+        ],
+        "gm": [
+          30.2,
+          30.8,
+          30.5,
+          30.6,
+          30.9,
+          30.4,
+          30.7,
+          30.3
+        ]
+      },
+      "fams": {
+        "ec": {
+          "bias": -0.2,
+          "std": 1.1,
+          "se": 0.3,
+          "n": 8,
+          "spread2": 0.25
+        },
+        "gf": {
+          "bias": 0.4,
+          "std": 1.4,
+          "se": 0.4,
+          "n": 8,
+          "spread2": 0.4
+        },
+        "ic": {
+          "bias": -0.6,
+          "std": 0.9,
+          "se": 0.25,
+          "n": 8,
+          "spread2": 0.2
+        },
+        "gm": {
+          "bias": 0.1,
+          "std": 1.6,
+          "se": 0.5,
+          "n": 8,
+          "spread2": null
+        }
+      }
+    },
+    {
+      "name": "стресс −1 SE",
+      "unit": "C",
+      "lead": 1,
+      "dbias": -1,
+      "range": [
+        30.5,
+        31.5
+      ],
+      "day": {
+        "ec": [
+          31.1,
+          30.6,
+          31.4,
+          30.9,
+          31.0,
+          31.2,
+          30.8,
+          31.3
+        ],
+        "gf": [
+          30.4,
+          30.9,
+          31.1,
+          30.7,
+          30.6,
+          31.0,
+          30.5,
+          30.8
+        ],
+        "ic": [
+          31.5,
+          31.2,
+          31.8,
+          31.0,
+          31.4,
+          31.6,
+          31.1,
+          31.3
+        ],
+        "gm": [
+          30.2,
+          30.8,
+          30.5,
+          30.6,
+          30.9,
+          30.4,
+          30.7,
+          30.3
+        ]
+      },
+      "fams": {
+        "ec": {
+          "bias": -0.2,
+          "std": 1.1,
+          "se": 0.3,
+          "n": 8,
+          "spread2": 0.25
+        },
+        "gf": {
+          "bias": 0.4,
+          "std": 1.4,
+          "se": 0.4,
+          "n": 8,
+          "spread2": 0.4
+        },
+        "ic": {
+          "bias": -0.6,
+          "std": 0.9,
+          "se": 0.25,
+          "n": 8,
+          "spread2": 0.2
+        },
+        "gm": {
+          "bias": 0.1,
+          "std": 1.6,
+          "se": 0.5,
+          "n": 8,
+          "spread2": null
+        }
+      }
+    },
+    {
+      "name": "фаренгейт и открытый верхний бакет, лид 2 без калибровки семейства",
+      "unit": "F",
+      "lead": 2,
+      "dbias": 1,
+      "range": [
+        87.5,
+        999
+      ],
+      "day": {
+        "ec": [
+          31.1,
+          30.6,
+          31.4,
+          30.9,
+          31.0,
+          31.2,
+          30.8,
+          31.3
+        ],
+        "gf": [
+          30.4,
+          30.9,
+          31.1,
+          30.7,
+          30.6,
+          31.0,
+          30.5,
+          30.8
+        ],
+        "ic": [
+          31.5,
+          31.2,
+          31.8,
+          31.0,
+          31.4,
+          31.6,
+          31.1,
+          31.3
+        ],
+        "gm": [
+          30.2,
+          30.8,
+          30.5,
+          30.6,
+          30.9,
+          30.4,
+          30.7,
+          30.3
+        ]
+      },
+      "fams": {
+        "ec": {
+          "bias": -0.2,
+          "std": 1.1,
+          "se": 0.3,
+          "n": 6,
+          "spread2": 0.25
+        },
+        "gf": {
+          "bias": 0.4,
+          "std": 1.4,
+          "se": 0.4,
+          "n": 6,
+          "spread2": 0.4
+        }
+      }
+    },
+    {
+      "name": "ансамблей меньше восьми членов — вероятности нет",
+      "unit": "C",
+      "lead": 1,
+      "dbias": 0,
+      "range": [
+        30.5,
+        31.5
+      ],
+      "day": {
+        "ec": [
+          31.0,
+          31.1,
+          30.9
+        ],
+        "gf": [
+          30.5
+        ]
+      },
+      "fams": {
+        "ec": {
+          "bias": 0,
+          "std": 1.0,
+          "se": 0.3,
+          "n": 8,
+          "spread2": 0.2
+        }
+      }
+    }
+  ],
+  "log_pool": [
+    {
+      "name": "четыре бакета, рынок перевешивает модель",
+      "rows": [
+        {
+          "p": 0.05,
+          "pLo": 0.03,
+          "pHi": 0.08,
+          "mid": 0.1
+        },
+        {
+          "p": 0.35,
+          "pLo": 0.3,
+          "pHi": 0.4,
+          "mid": 0.25
+        },
+        {
+          "p": 0.45,
+          "pLo": 0.4,
+          "pHi": 0.5,
+          "mid": 0.5
+        },
+        {
+          "p": 0.15,
+          "pLo": 0.1,
+          "pHi": 0.2,
+          "mid": 0.18
+        }
+      ]
+    },
+    {
+      "name": "нулевые вероятности зажимаются тиком",
+      "rows": [
+        {
+          "p": 0.0,
+          "pLo": 0.0,
+          "pHi": 0.0,
+          "mid": 0.02
+        },
+        {
+          "p": 0.6,
+          "pLo": 0.5,
+          "pHi": 0.7,
+          "mid": 0.55
+        },
+        {
+          "p": 0.4,
+          "pLo": 0.3,
+          "pHi": 0.5,
+          "mid": 0.45
+        }
+      ]
+    },
+    {
+      "name": "missing mid in one bucket → must reject",
+      "rows": [
+        {
+          "p": 0.3,
+          "pLo": 0.25,
+          "pHi": 0.35,
+          "mid": 0.28
+        },
+        {
+          "p": 0.5,
+          "pLo": 0.45,
+          "pHi": 0.55
+        },
+        {
+          "p": 0.2,
+          "pLo": 0.15,
+          "pHi": 0.25,
+          "mid": 0.22
+        }
+      ],
+      "expect_error": true
+    }
+  ],
+  "coverage": [
+    {
+      "name": "полное покрытие",
+      "ranges": [
+        [
+          -999,
+          29.5
+        ],
+        [
+          29.5,
+          30.5
+        ],
+        [
+          30.5,
+          31.5
+        ],
+        [
+          31.5,
+          999
+        ]
+      ]
+    },
+    {
+      "name": "дыра в середине",
+      "ranges": [
+        [
+          -999,
+          29.5
+        ],
+        [
+          30.5,
+          31.5
+        ],
+        [
+          31.5,
+          999
+        ]
+      ]
+    },
+    {
+      "name": "нет открытого низа",
+      "ranges": [
+        [
+          29.5,
+          30.5
+        ],
+        [
+          30.5,
+          31.5
+        ],
+        [
+          31.5,
+          999
+        ]
+      ]
+    },
+    {
+      "name": "нет открытого верха",
+      "ranges": [
+        [
+          -999,
+          29.5
+        ],
+        [
+          29.5,
+          30.5
+        ],
+        [
+          30.5,
+          31.5
+        ]
+      ]
+    },
+    {
+      "name": "наложение бакетов",
+      "ranges": [
+        [
+          -999,
+          30.5
+        ],
+        [
+          29.5,
+          31.5
+        ],
+        [
+          31.5,
+          999
+        ]
+      ]
+    }
+  ],
+  "buckets": [
+    "29°C or below",
+    "30°C",
+    "31-32°C",
+    "33°C or higher",
+    "35°C or above",
+    "мусор"
+  ],
+  "resolution": [
+    {
+      "name": "валидные правила",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "highest-temperature-in-chengdu-on-august-2",
+          "desc": "This market will resolve based on the highest temperature recorded at station ZUUU as reported by Weather Underground in degrees Celsius."
+        }
+      ]
+    },
+    {
+      "name": "источник не распознан",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "src-unknown",
+          "desc": "This market resolves to the highest temperature at ZUUU in degrees Celsius per the local newspaper."
+        }
+      ]
+    },
+    {
+      "name": "противоречивые источники",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "src-conflict",
+          "desc": "Resolution uses Weather Underground and NOAA data for station ZUUU in degrees Celsius."
+        }
+      ]
+    },
+    {
+      "name": "станция не наша",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "station-mismatch",
+          "desc": "Resolves by Weather Underground readings at station ZSPD in degrees Celsius."
+        }
+      ]
+    },
+    {
+      "name": "единицы не те",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "units-mismatch",
+          "desc": "Resolves by Weather Underground readings at station ZUUU in degrees Fahrenheit."
+        }
+      ]
+    },
+    {
+      "name": "единицы не распознаны",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "units-missing",
+          "desc": "Resolves by Weather Underground readings at station ZUUU."
+        }
+      ]
+    },
+    {
+      "name": "пустые правила",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "empty",
+          "desc": "   "
+        }
+      ]
+    },
+    {
+      "name": "правила изменились между прогонами",
+      "unit": "C",
+      "station": "ZUUU",
+      "steps": [
+        {
+          "eslug": "changed",
+          "desc": "Resolves by Weather Underground at ZUUU in degrees Celsius."
+        },
+        {
+          "eslug": "changed",
+          "desc": "Resolves by Weather Underground at ZUUU in degrees Celsius (updated wording)."
+        }
+      ]
+    }
+  ],
+  "kelly": [
+    {
+      "p_base": 0.62,
+      "p_cons": 0.55,
+      "cost": 0.45,
+      "bankroll": 100,
+      "cap": 5
+    },
+    {
+      "p_base": 0.62,
+      "p_cons": 0.55,
+      "cost": 0.45,
+      "bankroll": 100,
+      "cap": 1
+    },
+    {
+      "p_base": 0.3,
+      "p_cons": 0.25,
+      "cost": 0.45,
+      "bankroll": 100,
+      "cap": 5
+    },
+    {
+      "p_base": 0.51,
+      "p_cons": 0.5,
+      "cost": 0.5,
+      "bankroll": 20,
+      "cap": 5
+    }
+  ],
+  "combo_lots": [
+    {
+      "name": "обычное комбо в бюджет",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 4,
+        "cost": 0.55,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.2,
+          0.25,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.25,
+          0.3,
+          0.12
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.2,
+              200
+            ],
+            [
+              0.21,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.25,
+              200
+            ],
+            [
+              0.26,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              200
+            ],
+            [
+              0.11,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "бюджет режет комбо до минимальных лотов",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2.1,
+      "step": {
+        "stake": 5,
+        "cost": 0.55,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.2,
+          0.25,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.25,
+          0.3,
+          0.12
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.2,
+              200
+            ],
+            [
+              0.21,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.25,
+              200
+            ],
+            [
+              0.26,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              200
+            ],
+            [
+              0.11,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "минимальные лоты не влезают в бюджет — NO BET",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 1.5,
+      "step": {
+        "stake": 5,
+        "cost": 0.55,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.2,
+          0.25,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.25,
+          0.3,
+          0.12
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.2,
+              200
+            ],
+            [
+              0.21,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.25,
+              200
+            ],
+            [
+              0.26,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              200
+            ],
+            [
+              0.11,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "нога ровно на $1.00 при цене с двоичным хвостом",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 2.5,
+        "cost": 0.2,
+        "buckets": [
+          "30°C",
+          "31°C"
+        ],
+        "asks": [
+          0.1,
+          0.1
+        ],
+        "tids": [
+          "a",
+          "b"
+        ],
+        "leg_p": [
+          0.3,
+          0.3
+        ]
+      },
+      "books": {
+        "a": {
+          "levels": [
+            [
+              0.1,
+              9.569377990430622
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "b": {
+          "levels": [
+            [
+              0.1,
+              9.569377990430622
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "одна нога без книги — исполнимых ног меньше двух",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 4,
+        "cost": 0.45,
+        "buckets": [
+          "30°C",
+          "31°C"
+        ],
+        "asks": [
+          0.2,
+          0.25
+        ],
+        "tids": [
+          "t30",
+          "t31"
+        ],
+        "leg_p": [
+          0.25,
+          0.3
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.2,
+              200
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "тонкая книга отсекается по средней цене",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 4,
+        "cost": 0.45,
+        "buckets": [
+          "30°C",
+          "31°C"
+        ],
+        "asks": [
+          0.05,
+          0.25
+        ],
+        "tids": [
+          "t30",
+          "t31"
+        ],
+        "leg_p": [
+          0.25,
+          0.3
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.05,
+              1
+            ],
+            [
+              0.9,
+              500
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.25,
+              200
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "step": {
+        "stake": 10,
+        "cost": 0.3,
+        "buckets": [
+          "A",
+          "B"
+        ],
+        "asks": [
+          0.3,
+          0.4
+        ],
+        "tids": [
+          "t_a",
+          "t_b"
+        ],
+        "leg_p": [
+          0.3,
+          0.4
+        ]
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_shares": 0,
+        "min_order": 1.0
+      },
+      "budget_left": 15.0,
+      "books": {
+        "t_a": {
+          "levels": [
+            [
+              0.3,
+              100
+            ],
+            [
+              0.31,
+              200
+            ]
+          ],
+          "min_order_size": 5,
+          "tick_size": 0.01
+        },
+        "t_b": {
+          "levels": [
+            [
+              0.4,
+              100
+            ],
+            [
+              0.41,
+              200
+            ]
+          ],
+          "min_order_size": 5,
+          "tick_size": 0.01
+        }
+      },
+      "want": {
+        "ok": true,
+        "total_usd": 4.82,
+        "ev_final": 0.1512
+      },
+      "name": "combo с min_order_size=5 акций: обе ноги проходят"
+    }
+  ],
+  "arb": [
+    {
+      "name": "исполнимая связка",
+      "mp": {
+        "fee_rate": 0.01,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "legs": [
+        "x",
+        "y"
+      ],
+      "books": {
+        "x": {
+          "levels": [
+            [
+              0.4,
+              50
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "y": {
+          "levels": [
+            [
+              0.5,
+              60
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "с комиссиями прибыли нет",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "legs": [
+        "x",
+        "y"
+      ],
+      "books": {
+        "x": {
+          "levels": [
+            [
+              0.48,
+              50
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "y": {
+          "levels": [
+            [
+              0.5,
+              60
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "объёма не хватает на минимальный ордер",
+      "mp": {
+        "fee_rate": 0.01,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "legs": [
+        "x",
+        "y"
+      ],
+      "books": {
+        "x": {
+          "levels": [
+            [
+              0.4,
+              1
+            ],
+            [
+              0.41,
+              100
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "y": {
+          "levels": [
+            [
+              0.5,
+              60
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "пустая книга",
+      "mp": {
+        "fee_rate": 0.01,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "legs": [
+        "x",
+        "y"
+      ],
+      "books": {
+        "x": {
+          "levels": [],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "y": {
+          "levels": [
+            [
+              0.5,
+              60
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    }
+  ],
+  "chance_combos": [
+    {
+      "name": "три бакета подряд",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "rows": [
+        {
+          "bucket": "29°C or below",
+          "lo": -999,
+          "p": 0.05,
+          "pLo": 0.03,
+          "pHi": 0.08,
+          "ask": 0.08,
+          "tid": "t29"
+        },
+        {
+          "bucket": "30°C",
+          "lo": 29.5,
+          "p": 0.3,
+          "pLo": 0.25,
+          "pHi": 0.35,
+          "ask": 0.2,
+          "tid": "t30"
+        },
+        {
+          "bucket": "31°C",
+          "lo": 30.5,
+          "p": 0.32,
+          "pLo": 0.27,
+          "pHi": 0.37,
+          "ask": 0.25,
+          "tid": "t31"
+        },
+        {
+          "bucket": "32°C",
+          "lo": 31.5,
+          "p": 0.2,
+          "pLo": 0.15,
+          "pHi": 0.25,
+          "ask": 0.15,
+          "tid": "t32"
+        },
+        {
+          "bucket": "33°C or higher",
+          "lo": 32.5,
+          "p": 0.13,
+          "pLo": 0.1,
+          "pHi": 0.18,
+          "ask": 0.3,
+          "tid": "t33"
+        }
+      ]
+    },
+    {
+      "name": "рынок запрайсен — комбо нет",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "rows": [
+        {
+          "bucket": "30°C",
+          "lo": 29.5,
+          "p": 0.3,
+          "pLo": 0.25,
+          "pHi": 0.35,
+          "ask": 0.32,
+          "tid": "t30"
+        },
+        {
+          "bucket": "31°C",
+          "lo": 30.5,
+          "p": 0.32,
+          "pLo": 0.27,
+          "pHi": 0.37,
+          "ask": 0.34,
+          "tid": "t31"
+        },
+        {
+          "bucket": "32°C",
+          "lo": 31.5,
+          "p": 0.2,
+          "pLo": 0.15,
+          "pHi": 0.25,
+          "ask": 0.22,
+          "tid": "t32"
+        }
+      ]
+    }
+  ],
+  "verdict": [
+    {
+      "name": "BET: исполнимое комбо в бюджете",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 4,
+        "cost": 0.42,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.12,
+          0.18,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.25,
+          0.32,
+          0.15
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.12,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.18,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "NO BET: EV после комиссий и лотов ниже порога",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": {
+        "stake": 4,
+        "cost": 0.55,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.2,
+          0.25,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.2,
+          0.25,
+          0.1
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.2,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.25,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "NO BET: бюджет исчерпан",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 0.9,
+      "step": {
+        "stake": 4,
+        "cost": 0.42,
+        "buckets": [
+          "30°C",
+          "31°C",
+          "32°C"
+        ],
+        "asks": [
+          0.12,
+          0.18,
+          0.1
+        ],
+        "tids": [
+          "t30",
+          "t31",
+          "t32"
+        ],
+        "leg_p": [
+          0.25,
+          0.32,
+          0.15
+        ]
+      },
+      "books": {
+        "t30": {
+          "levels": [
+            [
+              0.12,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t31": {
+          "levels": [
+            [
+              0.18,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        },
+        "t32": {
+          "levels": [
+            [
+              0.1,
+              300
+            ]
+          ],
+          "min_order_size": 1,
+          "tick_size": 0.01
+        }
+      }
+    },
+    {
+      "name": "NO BET: лоты не рассчитаны вовсе",
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "step": null,
+      "books": {}
+    }
+  ],
+  "single_lot": [
+    {
+      "name": "10¢→40¢ slippage: walkBook stops at ask=0.10, never reaches 0.40",
+      "pick": {
+        "token_id": "tok1",
+        "ask": 0.10,
+        "stake": 5
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "book": {
+        "levels": [[0.10, 1], [0.40, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "нет объёма"
+      }
+    },
+    {
+      "name": "normalization: 3.2 shares × $0.3105 = $0.9936 < $1 minimum → reject",
+      "pick": {
+        "token_id": "tok2",
+        "ask": 0.30,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 1
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.30, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.52,
+      "expected": {
+        "ok": false,
+        "reason_contains": "raw debit"
+      }
+    },
+    {
+      "name": "valid deep book: normal execution",
+      "pick": {
+        "token_id": "tok3",
+        "ask": 0.25,
+        "stake": 3
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 3,
+      "book": {
+        "levels": [[0.25, 50], [0.26, 50]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.40,
+      "expected": {
+        "ok": true,
+        "shares": 3.9,
+        "usd": 1.02,
+        "limit": 0.25,
+        "ev_final": 0.5422
+      }
+    },
+    {
+      "name": "missing min_order_size metadata → reject",
+      "pick": {
+        "token_id": "tok4",
+        "ask": 0.30,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.30, 100]],
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "метаданных"
+      }
+    },
+    {
+      "name": "off-tick: ask=0.403 incompatible with tick=0.01 → reject",
+      "pick": {
+        "token_id": "tok5",
+        "ask": 0.403,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.403, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "tick"
+      }
+    },
+    {
+      "name": "low EV: probability 0.52, ask 0.50 → EV=1.5% < 10% threshold → reject",
+      "pick": {
+        "token_id": "tok6",
+        "ask": 0.50,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.50, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.52,
+      "expected": {
+        "ok": false,
+        "reason_contains": "EV",
+        "ev_final": 0.0146
+      }
+    },
+    {
+      "name": "budget remainder: want $5 but budget_left=$1.20 → caps at $1.20",
+      "pick": {
+        "token_id": "tok7",
+        "ask": 0.30,
+        "stake": 5
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 1.20,
+      "book": {
+        "levels": [[0.30, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "raw debit"
+      }
+    }
+  ],
+  "web_budget": [
+    {
+      "name": "same date shares one $5 pot",
+      "overall_limit": 15,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 3], ["2026-08-03", 3]],
+      "expected": {
+        "accepted": [true, false],
+        "overall_left": 12,
+        "by_date": {"2026-08-03": 2}
+      }
+    },
+    {
+      "name": "different dates keep separate pots",
+      "overall_limit": 15,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 4], ["2026-08-04", 4]],
+      "expected": {
+        "accepted": [true, true],
+        "overall_left": 7,
+        "by_date": {"2026-08-03": 1, "2026-08-04": 1}
+      }
+    },
+    {
+      "name": "overall limit binds across dates",
+      "overall_limit": 6,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 4], ["2026-08-04", 3]],
+      "expected": {
+        "accepted": [true, false],
+        "overall_left": 2,
+        "by_date": {"2026-08-03": 1, "2026-08-04": 2}
+      }
+    }
+  ],
+  "single_candidates": [
+    {
+      "name": "YES and NO use conservative probability and side token",
+      "picks": [
+        {
+          "r": {"dateStr": "2026-08-03"},
+          "yes": {"conf": 5, "p": 0.70, "pLo": 0.40, "pHi": 0.80, "ask": 0.20,
+                  "cost": 0.21, "b": {"tidYes": "yes-token", "tidNo": "no-token"}},
+          "no": {"conf": 5, "p": 0.70, "pLo": 0.40, "pHi": 0.80, "ask": 0.30,
+                 "cost": 0.31, "b": {"tidYes": "yes-token", "tidNo": "no-token"}}
+        }
+      ],
+      "expected": [
+        {"side": "YES", "token_id": "yes-token", "pBase": 0.70, "pCons": 0.40},
+        {"side": "NO", "token_id": "no-token", "pBase": 0.30, "pCons": 0.20}
+      ]
+    }
+  ],
+  "single_selection": [
+    {
+      "name": "later valid candidate survives first rejection",
+      "overall_limit": 5,
+      "per_date_limit": 5,
+      "candidates": [
+        {"dateStr": "2026-08-03", "result": {"ok": false, "reason": "first rejected"}},
+        {"dateStr": "2026-08-03", "result": {"ok": true, "usd": 1.20}}
+      ],
+      "expected": {
+        "selected_index": 1,
+        "checked": 1,
+        "overall_left": 3.80,
+        "by_date": {"2026-08-03": 3.80}
+      }
+    }
+  ]
+}

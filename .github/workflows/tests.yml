@@ -1,0 +1,31 @@
+name: tests
+
+# Тесты обязаны идти на каждый push и pull request: «зелено у меня локально» —
+# не доказательство. Сети в CI нет по замыслу: все внешние API замоканы.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Синтаксис Python
+        run: python -m compileall -q src tests
+      - name: Синтаксис веб-скринеров
+        run: node tests/parity/check_syntax.js
+      - name: Ядро паритета считается само по себе
+        run: node tests/parity/parity_test.js > /dev/null
+      - name: Весь набор тестов
+        run: python -m unittest discover -s tests -t . -v

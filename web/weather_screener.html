@@ -167,54 +167,54 @@ const CITIES = [
   // калибровка v2 (2026-08-02): lead-matched по семействам — прогноз, каким он был за сутки
   // до дня (Previous Runs), против METAR. b=поправка, s=разброс, se=ошибка среднего. По каждому
   // семейству СВОЯ поправка (ECMWF и ICON расходятся на 2-4° — общая поправка была ошибкой).
-  { slug:"london", name:"Лондон", lat:51.5053, lon:0.0553, unit:"C", tier:"B", fams:{ec:{b:0.12,s:0.74,se:0.25}, gf:{b:-1.1,s:0.94,se:0.31}, gm:{b:0.62,s:0.86,se:0.29}, ic:{b:0.52,s:0.51,se:0.17}} },
-  { slug:"paris", name:"Париж", lat:48.9694, lon:2.4414, unit:"C", tier:"C", fams:{ec:{b:1.13,s:0.77,se:0.26}, gf:{b:-1.53,s:1.92,se:0.64}, gm:{b:0.41,s:1.24,se:0.41}, ic:{b:-0.0,s:0.76,se:0.25}} },
-  { slug:"milan", name:"Милан", lat:45.6306, lon:8.7281, unit:"C", tier:"C", fams:{ec:{b:1.09,s:1.4,se:0.47}, gf:{b:-2.51,s:1.52,se:0.51}, gm:{b:0.06,s:1.32,se:0.44}, ic:{b:-0.41,s:1.64,se:0.55}} },
-  { slug:"munich", name:"Мюнхен", lat:48.3538, lon:11.7861, unit:"C", tier:"B", fams:{ec:{b:2.3,s:1.11,se:0.37}, gf:{b:2.2,s:1.07,se:0.36}, gm:{b:0.74,s:1.26,se:0.42}, ic:{b:0.29,s:0.93,se:0.31}} },
-  { slug:"madrid", name:"Мадрид", lat:40.4719, lon:-3.5626, unit:"C", tier:"B", fams:{ec:{b:0.33,s:0.58,se:0.19}, gf:{b:0.6,s:0.81,se:0.27}, gm:{b:1.3,s:1.05,se:0.35}, ic:{b:0.67,s:0.52,se:0.17}} },
-  { slug:"warsaw", name:"Варшава", lat:52.1657, lon:20.9671, unit:"C", tier:"C", fams:{ec:{b:-0.08,s:1.09,se:0.36}, gf:{b:-0.94,s:1.03,se:0.34}, gm:{b:-1.0,s:1.53,se:0.51}, ic:{b:-1.06,s:1.15,se:0.38}} },
-  { slug:"amsterdam", name:"Амстердам", lat:52.3105, lon:4.7683, unit:"C", tier:"A", fams:{ec:{b:1.28,s:0.66,se:0.22}, gf:{b:-1.03,s:0.82,se:0.27}, gm:{b:0.39,s:0.9,se:0.3}, ic:{b:0.47,s:0.69,se:0.23}} },
-  { slug:"nyc", name:"Нью-Йорк", lat:40.7769, lon:-73.874, unit:"F", tier:"C", fams:{ec:{b:-0.53,s:1.57,se:0.49}, gf:{b:-1.1,s:1.21,se:0.38}, gm:{b:0.84,s:1.02,se:0.32}, ic:{b:-0.54,s:1.22,se:0.39}} },
-  { slug:"chicago", name:"Чикаго", lat:41.9786, lon:-87.9048, unit:"F", tier:"C", fams:{ec:{b:-1.23,s:1.8,se:0.57}, gf:{b:-1.72,s:1.23,se:0.39}, gm:{b:0.46,s:1.42,se:0.45}, ic:{b:-1.16,s:2.03,se:0.64}} },
-  { slug:"dallas", name:"Даллас", lat:32.8471, lon:-96.8518, unit:"F", tier:"A", fams:{ec:{b:-1.99,s:0.67,se:0.21}, gf:{b:-3.2,s:0.79,se:0.25}, gm:{b:-0.26,s:0.69,se:0.22}, ic:{b:-0.85,s:0.43,se:0.14}} },
-  { slug:"miami", name:"Майами", lat:25.7959, lon:-80.287, unit:"F", tier:"C", fams:{ec:{b:1.61,s:0.88,se:0.28}, gf:{b:-1.59,s:1.27,se:0.4}, gm:{b:1.35,s:1.94,se:0.61}, ic:{b:0.58,s:0.95,se:0.3}} },
-  { slug:"atlanta", name:"Атланта", lat:33.6407, lon:-84.4277, unit:"F", tier:"C", fams:{ec:{b:0.64,s:1.34,se:0.42}, gf:{b:-2.36,s:1.5,se:0.47}, gm:{b:1.79,s:0.88,se:0.28}, ic:{b:0.95,s:1.82,se:0.58}} },
-  { slug:"seattle", name:"Сиэтл", lat:47.4502, lon:-122.3088, unit:"F", tier:"B", fams:{ec:{b:0.48,s:0.91,se:0.29}, gf:{b:-2.54,s:0.67,se:0.21}, gm:{b:0.78,s:1.41,se:0.45}, ic:{b:1.45,s:1.19,se:0.38}} },
-  { slug:"toronto", name:"Торонто", lat:43.6777, lon:-79.6248, unit:"C", tier:"B", fams:{ec:{b:0.06,s:1.43,se:0.45}, gf:{b:-0.92,s:1.13,se:0.36}, gm:{b:2.46,s:1.41,se:0.45}, ic:{b:0.87,s:0.66,se:0.21}} },
-  { slug:"seoul", name:"Сеул", lat:37.4602, lon:126.4407, unit:"C", tier:"C", fams:{ec:{b:1.74,s:0.78,se:0.27}, gf:{b:4.34,s:0.87,se:0.31}, gm:{b:1.99,s:1.04,se:0.37}, ic:{b:0.61,s:0.81,se:0.29}} },
-  { slug:"tokyo", name:"Токио", lat:35.5494, lon:139.7798, unit:"C", tier:"C", fams:{ec:{b:-2.01,s:2.55,se:0.9}, gf:{b:-0.34,s:2.85,se:1.01}, gm:{b:0.09,s:2.86,se:1.01}, ic:{b:0.36,s:2.69,se:0.95}} },
-  { slug:"shanghai", name:"Шанхай", lat:31.1443, lon:121.8083, unit:"C", tier:"C", fams:{ec:{b:0.07,s:1.76,se:0.62}, gf:{b:2.0,s:1.74,se:0.62}, gm:{b:2.28,s:1.79,se:0.63}, ic:{b:1.39,s:1.89,se:0.67}} },
-  { slug:"singapore", name:"Сингапур", lat:1.3644, lon:103.9915, unit:"C", tier:"B", fams:{ec:{b:1.76,s:0.85,se:0.32}, gf:{b:1.39,s:1.09,se:0.41}, gm:{b:0.86,s:0.94,se:0.36}, ic:{b:0.83,s:0.72,se:0.27}} },
-  { slug:"hong-kong", name:"Гонконг", lat:22.302, lon:114.1741, unit:"C", tier:"C", fams:null },
-  { slug:"wellington", name:"Веллингтон", lat:-41.3272, lon:174.8053, unit:"C", tier:"C", fams:{ec:{b:0.75,s:1.55,se:0.55}, gf:{b:0.81,s:1.53,se:0.54}, gm:{b:0.84,s:1.44,se:0.51}, ic:{b:0.5,s:1.47,se:0.52}} },
-  { slug:"sao-paulo", name:"Сан-Паулу", lat:-23.4356, lon:-46.4731, unit:"C", tier:"C", fams:{ec:{b:0.39,s:1.36,se:0.43}, gf:{b:-0.98,s:1.21,se:0.38}, gm:{b:-0.96,s:1.72,se:0.54}, ic:{b:0.23,s:0.98,se:0.31}} },
-  { slug:"buenos-aires", name:"Буэнос-Айрес", lat:-34.8222, lon:-58.5358, unit:"C", tier:"C", fams:{ec:{b:0.68,s:0.77,se:0.24}, gf:{b:0.76,s:1.57,se:0.5}, gm:{b:0.43,s:1.51,se:0.48}, ic:{b:1.22,s:1.53,se:0.48}} },
-  { slug:"mexico-city", name:"Мехико", lat:19.4363, lon:-99.0721, unit:"C", tier:"C", fams:{ec:{b:-0.46,s:2.59,se:0.82}, gf:{b:-0.06,s:1.3,se:0.41}, gm:{b:0.61,s:2.14,se:0.68}, ic:{b:-0.04,s:0.93,se:0.29}} },
-  { slug:"chongqing", name:"Чунцин", lat:29.719, lon:106.642, unit:"C", tier:"C", fams:{ec:{b:2.48,s:0.65,se:0.22}, gf:{b:4.22,s:1.22,se:0.41}, gm:{b:1.61,s:1.44,se:0.48}, ic:{b:1.21,s:0.95,se:0.32}} },
-  { slug:"chengdu", name:"Чэнду", lat:30.578, lon:103.947, unit:"C", tier:"C", fams:{ec:{b:0.0,s:1.81,se:0.6}, gf:{b:3.42,s:2.0,se:0.67}, gm:{b:2.3,s:1.56,se:0.52}, ic:{b:1.0,s:1.55,se:0.52}} },
-  { slug:"kuala-lumpur", name:"Куала-Лумпур", lat:2.746, lon:101.71, unit:"C", tier:"C", fams:{ec:{b:1.15,s:1.91,se:0.68}, gf:{b:1.1,s:1.91,se:0.67}, gm:{b:2.95,s:1.4,se:0.5}, ic:{b:0.25,s:1.8,se:0.63}} },
-  { slug:"los-angeles", name:"Лос-Анджелес", lat:33.9425, lon:-118.408, unit:"F", tier:"C", fams:{ec:{b:-7.8,s:1.4,se:0.44}, gf:{b:-2.09,s:1.0,se:0.32}, gm:{b:-1.01,s:0.76,se:0.24}, ic:{b:-2.83,s:0.94,se:0.3}} },
-  { slug:"tel-aviv", name:"Тель-Авив", lat:32.011, lon:34.886, unit:"C", tier:"A", fams:{ec:{b:-2.43,s:0.67,se:0.22}, gf:{b:-0.66,s:0.56,se:0.19}, gm:{b:-0.02,s:0.39,se:0.13}, ic:{b:-0.24,s:0.61,se:0.2}} },
-  { slug:"beijing", name:"Пекин", lat:40.08, lon:116.585, unit:"C", tier:"B", fams:{ec:{b:0.8,s:0.75,se:0.28}, gf:{b:-0.81,s:0.94,se:0.36}, gm:{b:1.06,s:1.21,se:0.46}, ic:{b:2.67,s:1.05,se:0.4}} },
-  { slug:"taipei", name:"Тайбэй", lat:25.069, lon:121.552, unit:"C", tier:"B", fams:{ec:{b:2.17,s:0.5,se:0.18}, gf:{b:0.94,s:1.34,se:0.47}, gm:{b:2.82,s:1.42,se:0.5}, ic:{b:1.59,s:0.73,se:0.26}} },
-  { slug:"helsinki", name:"Хельсинки", lat:60.317, lon:24.963, unit:"C", tier:"B", fams:{ec:{b:1.82,s:0.56,se:0.19}, gf:{b:1.03,s:1.01,se:0.34}, gm:{b:1.61,s:0.34,se:0.11}, ic:{b:1.19,s:0.58,se:0.19}} },
-  { slug:"lucknow", name:"Лакхнау", lat:26.761, lon:80.889, unit:"C", tier:"C", fams:{ec:{b:1.46,s:0.82,se:0.29}, gf:{b:-2.7,s:1.88,se:0.67}, gm:{b:1.83,s:1.42,se:0.5}, ic:{b:1.08,s:1.16,se:0.41}} },
-  { slug:"jeddah", name:"Джидда", lat:21.68, lon:39.157, unit:"C", tier:"B", fams:{ec:{b:-1.54,s:1.28,se:0.39}, gf:{b:1.35,s:1.34,se:0.4}, gm:{b:3.27,s:1.19,se:0.36}, ic:{b:0.08,s:1.44,se:0.44}} },
-  { slug:"karachi", name:"Карачи", lat:24.907, lon:67.161, unit:"C", tier:"B", fams:{ec:{b:-1.38,s:1.06,se:0.37}, gf:{b:1.41,s:1.43,se:0.51}, gm:{b:0.01,s:1.15,se:0.41}, ic:{b:-0.06,s:1.4,se:0.5}} },
-  { slug:"houston", name:"Хьюстон", lat:29.646, lon:-95.279, unit:"F", tier:"B", fams:{ec:{b:-0.29,s:1.26,se:0.4}, gf:{b:-2.57,s:1.18,se:0.37}, gm:{b:-0.24,s:1.16,se:0.37}, ic:{b:-0.54,s:0.71,se:0.23}} },
-  { slug:"ankara", name:"Анкара", lat:40.128, lon:32.995, unit:"C", tier:"C", fams:{ec:{b:0.56,s:1.74,se:0.58}, gf:{b:0.53,s:0.76,se:0.25}, gm:{b:0.43,s:0.74,se:0.25}, ic:{b:1.32,s:1.18,se:0.39}} },
-  { slug:"wuhan", name:"Ухань", lat:30.784, lon:114.208, unit:"C", tier:"C", fams:{ec:{b:2.46,s:0.78,se:0.26}, gf:{b:1.46,s:1.88,se:0.63}, gm:{b:1.54,s:1.13,se:0.38}, ic:{b:0.8,s:0.93,se:0.31}} },
-  { slug:"guangzhou", name:"Гуанчжоу", lat:23.392, lon:113.299, unit:"C", tier:"C", fams:{ec:{b:2.5,s:2.15,se:0.81}, gf:{b:2.97,s:2.5,se:0.94}, gm:{b:2.26,s:1.09,se:0.41}, ic:{b:0.81,s:1.32,se:0.5}} },
-  { slug:"denver", name:"Денвер", lat:39.702, lon:-104.752, unit:"F", tier:"C", fams:{ec:{b:1.33,s:1.0,se:0.31}, gf:{b:-0.73,s:1.3,se:0.41}, gm:{b:1.37,s:1.57,se:0.5}, ic:{b:0.15,s:1.28,se:0.41}} },
-  { slug:"istanbul", name:"Стамбул", lat:41.276, lon:28.752, unit:"C", tier:"B", fams:{ec:{b:0.31,s:0.74,se:0.25}, gf:{b:-0.56,s:1.15,se:0.38}, gm:{b:0.62,s:0.82,se:0.27}, ic:{b:-0.07,s:0.44,se:0.15}} },
-  { slug:"qingdao", name:"Циндао", lat:36.362, lon:120.088, unit:"C", tier:"B", fams:{ec:{b:0.52,s:0.53,se:0.18}, gf:{b:-1.52,s:1.33,se:0.44}, gm:{b:0.13,s:0.97,se:0.32}, ic:{b:0.4,s:0.84,se:0.28}} },
-  { slug:"cape-town", name:"Кейптаун", lat:-33.965, lon:18.602, unit:"C", tier:"C", fams:{ec:{b:0.96,s:1.05,se:0.32}, gf:{b:1.12,s:1.03,se:0.31}, gm:{b:0.67,s:1.08,se:0.33}, ic:{b:1.16,s:2.16,se:0.65}} },
-  { slug:"manila", name:"Манила", lat:14.509, lon:121.02, unit:"C", tier:"C", fams:{ec:{b:1.84,s:1.39,se:0.46}, gf:{b:1.21,s:1.62,se:0.54}, gm:{b:1.3,s:1.87,se:0.62}, ic:{b:-0.48,s:1.45,se:0.48}} },
-  { slug:"austin", name:"Остин", lat:30.1975, lon:-97.6664, unit:"F", tier:"C", fams:{ec:{b:-0.56,s:1.18,se:0.37}, gf:{b:-2.86,s:0.93,se:0.29}, gm:{b:-0.17,s:1.63,se:0.51}, ic:{b:-0.34,s:1.12,se:0.36}} },
-  { slug:"busan", name:"Пусан", lat:35.1795, lon:128.9382, unit:"C", tier:"C", fams:{ec:{b:-1.94,s:1.17,se:0.39}, gf:{b:-1.0,s:1.45,se:0.48}, gm:{b:0.27,s:1.49,se:0.5}, ic:{b:2.0,s:1.71,se:0.57}} },
-  { slug:"shenzhen", name:"Шэньчжэнь", lat:22.6393, lon:113.8107, unit:"C", tier:"C", fams:{ec:{b:0.84,s:1.02,se:0.34}, gf:{b:0.12,s:1.69,se:0.56}, gm:{b:0.67,s:1.88,se:0.63}, ic:{b:0.26,s:1.67,se:0.56}} },
-  { slug:"san-francisco", name:"Сан-Франциско", lat:37.6213, lon:-122.379, unit:"F", tier:"A", fams:{ec:{b:2.33,s:0.65,se:0.2}, gf:{b:0.29,s:0.67,se:0.21}, gm:{b:2.55,s:0.81,se:0.26}, ic:{b:-1.41,s:0.61,se:0.19}} },
-  { slug:"moscow", name:"Москва", lat:55.5915, lon:37.2615, unit:"C", tier:"C", fams:{ec:{b:-0.06,s:2.25,se:0.79}, gf:{b:0.14,s:2.3,se:0.81}, gm:{b:-0.54,s:2.49,se:0.88}, ic:{b:-0.28,s:2.24,se:0.79}} },
+  { slug:"london", name:"Лондон", icao:"EGLC", lat:51.5053, lon:0.0553, unit:"C", tier:"B", fams:{ec:{b:0.12,s:0.74,se:0.25}, gf:{b:-1.1,s:0.94,se:0.31}, gm:{b:0.62,s:0.86,se:0.29}, ic:{b:0.52,s:0.51,se:0.17}} },
+  { slug:"paris", name:"Париж", icao:"LFPB", lat:48.9694, lon:2.4414, unit:"C", tier:"C", fams:{ec:{b:1.13,s:0.77,se:0.26}, gf:{b:-1.53,s:1.92,se:0.64}, gm:{b:0.41,s:1.24,se:0.41}, ic:{b:-0.0,s:0.76,se:0.25}} },
+  { slug:"milan", name:"Милан", icao:"LIMC", lat:45.6306, lon:8.7281, unit:"C", tier:"C", fams:{ec:{b:1.09,s:1.4,se:0.47}, gf:{b:-2.51,s:1.52,se:0.51}, gm:{b:0.06,s:1.32,se:0.44}, ic:{b:-0.41,s:1.64,se:0.55}} },
+  { slug:"munich", name:"Мюнхен", icao:"EDDM", lat:48.3538, lon:11.7861, unit:"C", tier:"B", fams:{ec:{b:2.3,s:1.11,se:0.37}, gf:{b:2.2,s:1.07,se:0.36}, gm:{b:0.74,s:1.26,se:0.42}, ic:{b:0.29,s:0.93,se:0.31}} },
+  { slug:"madrid", name:"Мадрид", icao:"LEMD", lat:40.4719, lon:-3.5626, unit:"C", tier:"B", fams:{ec:{b:0.33,s:0.58,se:0.19}, gf:{b:0.6,s:0.81,se:0.27}, gm:{b:1.3,s:1.05,se:0.35}, ic:{b:0.67,s:0.52,se:0.17}} },
+  { slug:"warsaw", name:"Варшава", icao:"EPWA", lat:52.1657, lon:20.9671, unit:"C", tier:"C", fams:{ec:{b:-0.08,s:1.09,se:0.36}, gf:{b:-0.94,s:1.03,se:0.34}, gm:{b:-1.0,s:1.53,se:0.51}, ic:{b:-1.06,s:1.15,se:0.38}} },
+  { slug:"amsterdam", name:"Амстердам", icao:"EHAM", lat:52.3105, lon:4.7683, unit:"C", tier:"A", fams:{ec:{b:1.28,s:0.66,se:0.22}, gf:{b:-1.03,s:0.82,se:0.27}, gm:{b:0.39,s:0.9,se:0.3}, ic:{b:0.47,s:0.69,se:0.23}} },
+  { slug:"nyc", name:"Нью-Йорк", icao:"KLGA", lat:40.7769, lon:-73.874, unit:"F", tier:"C", fams:{ec:{b:-0.53,s:1.57,se:0.49}, gf:{b:-1.1,s:1.21,se:0.38}, gm:{b:0.84,s:1.02,se:0.32}, ic:{b:-0.54,s:1.22,se:0.39}} },
+  { slug:"chicago", name:"Чикаго", icao:"KORD", lat:41.9786, lon:-87.9048, unit:"F", tier:"C", fams:{ec:{b:-1.23,s:1.8,se:0.57}, gf:{b:-1.72,s:1.23,se:0.39}, gm:{b:0.46,s:1.42,se:0.45}, ic:{b:-1.16,s:2.03,se:0.64}} },
+  { slug:"dallas", name:"Даллас", icao:"KDAL", lat:32.8471, lon:-96.8518, unit:"F", tier:"A", fams:{ec:{b:-1.99,s:0.67,se:0.21}, gf:{b:-3.2,s:0.79,se:0.25}, gm:{b:-0.26,s:0.69,se:0.22}, ic:{b:-0.85,s:0.43,se:0.14}} },
+  { slug:"miami", name:"Майами", icao:"KMIA", lat:25.7959, lon:-80.287, unit:"F", tier:"C", fams:{ec:{b:1.61,s:0.88,se:0.28}, gf:{b:-1.59,s:1.27,se:0.4}, gm:{b:1.35,s:1.94,se:0.61}, ic:{b:0.58,s:0.95,se:0.3}} },
+  { slug:"atlanta", name:"Атланта", icao:"KATL", lat:33.6407, lon:-84.4277, unit:"F", tier:"C", fams:{ec:{b:0.64,s:1.34,se:0.42}, gf:{b:-2.36,s:1.5,se:0.47}, gm:{b:1.79,s:0.88,se:0.28}, ic:{b:0.95,s:1.82,se:0.58}} },
+  { slug:"seattle", name:"Сиэтл", icao:"KSEA", lat:47.4502, lon:-122.3088, unit:"F", tier:"B", fams:{ec:{b:0.48,s:0.91,se:0.29}, gf:{b:-2.54,s:0.67,se:0.21}, gm:{b:0.78,s:1.41,se:0.45}, ic:{b:1.45,s:1.19,se:0.38}} },
+  { slug:"toronto", name:"Торонто", icao:"CYYZ", lat:43.6777, lon:-79.6248, unit:"C", tier:"B", fams:{ec:{b:0.06,s:1.43,se:0.45}, gf:{b:-0.92,s:1.13,se:0.36}, gm:{b:2.46,s:1.41,se:0.45}, ic:{b:0.87,s:0.66,se:0.21}} },
+  { slug:"seoul", name:"Сеул", icao:"RKSI", lat:37.4602, lon:126.4407, unit:"C", tier:"C", fams:{ec:{b:1.74,s:0.78,se:0.27}, gf:{b:4.34,s:0.87,se:0.31}, gm:{b:1.99,s:1.04,se:0.37}, ic:{b:0.61,s:0.81,se:0.29}} },
+  { slug:"tokyo", name:"Токио", icao:"RJTT", lat:35.5494, lon:139.7798, unit:"C", tier:"C", fams:{ec:{b:-2.01,s:2.55,se:0.9}, gf:{b:-0.34,s:2.85,se:1.01}, gm:{b:0.09,s:2.86,se:1.01}, ic:{b:0.36,s:2.69,se:0.95}} },
+  { slug:"shanghai", name:"Шанхай", icao:"ZSPD", lat:31.1443, lon:121.8083, unit:"C", tier:"C", fams:{ec:{b:0.07,s:1.76,se:0.62}, gf:{b:2.0,s:1.74,se:0.62}, gm:{b:2.28,s:1.79,se:0.63}, ic:{b:1.39,s:1.89,se:0.67}} },
+  { slug:"singapore", name:"Сингапур", icao:"WSSS", lat:1.3644, lon:103.9915, unit:"C", tier:"B", fams:{ec:{b:1.76,s:0.85,se:0.32}, gf:{b:1.39,s:1.09,se:0.41}, gm:{b:0.86,s:0.94,se:0.36}, ic:{b:0.83,s:0.72,se:0.27}} },
+  { slug:"hong-kong", name:"Гонконг", icao:null, lat:22.302, lon:114.1741, unit:"C", tier:"C", fams:null },
+  { slug:"wellington", name:"Веллингтон", icao:"NZWN", lat:-41.3272, lon:174.8053, unit:"C", tier:"C", fams:{ec:{b:0.75,s:1.55,se:0.55}, gf:{b:0.81,s:1.53,se:0.54}, gm:{b:0.84,s:1.44,se:0.51}, ic:{b:0.5,s:1.47,se:0.52}} },
+  { slug:"sao-paulo", name:"Сан-Паулу", icao:"SBGR", lat:-23.4356, lon:-46.4731, unit:"C", tier:"C", fams:{ec:{b:0.39,s:1.36,se:0.43}, gf:{b:-0.98,s:1.21,se:0.38}, gm:{b:-0.96,s:1.72,se:0.54}, ic:{b:0.23,s:0.98,se:0.31}} },
+  { slug:"buenos-aires", name:"Буэнос-Айрес", icao:"SAEZ", lat:-34.8222, lon:-58.5358, unit:"C", tier:"C", fams:{ec:{b:0.68,s:0.77,se:0.24}, gf:{b:0.76,s:1.57,se:0.5}, gm:{b:0.43,s:1.51,se:0.48}, ic:{b:1.22,s:1.53,se:0.48}} },
+  { slug:"mexico-city", name:"Мехико", icao:"MMMX", lat:19.4363, lon:-99.0721, unit:"C", tier:"C", fams:{ec:{b:-0.46,s:2.59,se:0.82}, gf:{b:-0.06,s:1.3,se:0.41}, gm:{b:0.61,s:2.14,se:0.68}, ic:{b:-0.04,s:0.93,se:0.29}} },
+  { slug:"chongqing", name:"Чунцин", icao:"ZUCK", lat:29.719, lon:106.642, unit:"C", tier:"C", fams:{ec:{b:2.48,s:0.65,se:0.22}, gf:{b:4.22,s:1.22,se:0.41}, gm:{b:1.61,s:1.44,se:0.48}, ic:{b:1.21,s:0.95,se:0.32}} },
+  { slug:"chengdu", name:"Чэнду", icao:"ZUUU", lat:30.578, lon:103.947, unit:"C", tier:"C", fams:{ec:{b:0.0,s:1.81,se:0.6}, gf:{b:3.42,s:2.0,se:0.67}, gm:{b:2.3,s:1.56,se:0.52}, ic:{b:1.0,s:1.55,se:0.52}} },
+  { slug:"kuala-lumpur", name:"Куала-Лумпур", icao:"WMKK", lat:2.746, lon:101.71, unit:"C", tier:"C", fams:{ec:{b:1.15,s:1.91,se:0.68}, gf:{b:1.1,s:1.91,se:0.67}, gm:{b:2.95,s:1.4,se:0.5}, ic:{b:0.25,s:1.8,se:0.63}} },
+  { slug:"los-angeles", name:"Лос-Анджелес", icao:"KLAX", lat:33.9425, lon:-118.408, unit:"F", tier:"C", fams:{ec:{b:-7.8,s:1.4,se:0.44}, gf:{b:-2.09,s:1.0,se:0.32}, gm:{b:-1.01,s:0.76,se:0.24}, ic:{b:-2.83,s:0.94,se:0.3}} },
+  { slug:"tel-aviv", name:"Тель-Авив", icao:"LLBG", lat:32.011, lon:34.886, unit:"C", tier:"A", fams:{ec:{b:-2.43,s:0.67,se:0.22}, gf:{b:-0.66,s:0.56,se:0.19}, gm:{b:-0.02,s:0.39,se:0.13}, ic:{b:-0.24,s:0.61,se:0.2}} },
+  { slug:"beijing", name:"Пекин", icao:"ZBAA", lat:40.08, lon:116.585, unit:"C", tier:"B", fams:{ec:{b:0.8,s:0.75,se:0.28}, gf:{b:-0.81,s:0.94,se:0.36}, gm:{b:1.06,s:1.21,se:0.46}, ic:{b:2.67,s:1.05,se:0.4}} },
+  { slug:"taipei", name:"Тайбэй", icao:"RCSS", lat:25.069, lon:121.552, unit:"C", tier:"B", fams:{ec:{b:2.17,s:0.5,se:0.18}, gf:{b:0.94,s:1.34,se:0.47}, gm:{b:2.82,s:1.42,se:0.5}, ic:{b:1.59,s:0.73,se:0.26}} },
+  { slug:"helsinki", name:"Хельсинки", icao:"EFHK", lat:60.317, lon:24.963, unit:"C", tier:"B", fams:{ec:{b:1.82,s:0.56,se:0.19}, gf:{b:1.03,s:1.01,se:0.34}, gm:{b:1.61,s:0.34,se:0.11}, ic:{b:1.19,s:0.58,se:0.19}} },
+  { slug:"lucknow", name:"Лакхнау", icao:"VILK", lat:26.761, lon:80.889, unit:"C", tier:"C", fams:{ec:{b:1.46,s:0.82,se:0.29}, gf:{b:-2.7,s:1.88,se:0.67}, gm:{b:1.83,s:1.42,se:0.5}, ic:{b:1.08,s:1.16,se:0.41}} },
+  { slug:"jeddah", name:"Джидда", icao:"OEJN", lat:21.68, lon:39.157, unit:"C", tier:"B", fams:{ec:{b:-1.54,s:1.28,se:0.39}, gf:{b:1.35,s:1.34,se:0.4}, gm:{b:3.27,s:1.19,se:0.36}, ic:{b:0.08,s:1.44,se:0.44}} },
+  { slug:"karachi", name:"Карачи", icao:"OPKC", lat:24.907, lon:67.161, unit:"C", tier:"B", fams:{ec:{b:-1.38,s:1.06,se:0.37}, gf:{b:1.41,s:1.43,se:0.51}, gm:{b:0.01,s:1.15,se:0.41}, ic:{b:-0.06,s:1.4,se:0.5}} },
+  { slug:"houston", name:"Хьюстон", icao:"KHOU", lat:29.646, lon:-95.279, unit:"F", tier:"B", fams:{ec:{b:-0.29,s:1.26,se:0.4}, gf:{b:-2.57,s:1.18,se:0.37}, gm:{b:-0.24,s:1.16,se:0.37}, ic:{b:-0.54,s:0.71,se:0.23}} },
+  { slug:"ankara", name:"Анкара", icao:"LTAC", lat:40.128, lon:32.995, unit:"C", tier:"C", fams:{ec:{b:0.56,s:1.74,se:0.58}, gf:{b:0.53,s:0.76,se:0.25}, gm:{b:0.43,s:0.74,se:0.25}, ic:{b:1.32,s:1.18,se:0.39}} },
+  { slug:"wuhan", name:"Ухань", icao:"ZHHH", lat:30.784, lon:114.208, unit:"C", tier:"C", fams:{ec:{b:2.46,s:0.78,se:0.26}, gf:{b:1.46,s:1.88,se:0.63}, gm:{b:1.54,s:1.13,se:0.38}, ic:{b:0.8,s:0.93,se:0.31}} },
+  { slug:"guangzhou", name:"Гуанчжоу", icao:"ZGGG", lat:23.392, lon:113.299, unit:"C", tier:"C", fams:{ec:{b:2.5,s:2.15,se:0.81}, gf:{b:2.97,s:2.5,se:0.94}, gm:{b:2.26,s:1.09,se:0.41}, ic:{b:0.81,s:1.32,se:0.5}} },
+  { slug:"denver", name:"Денвер", icao:"KBKF", lat:39.702, lon:-104.752, unit:"F", tier:"C", fams:{ec:{b:1.33,s:1.0,se:0.31}, gf:{b:-0.73,s:1.3,se:0.41}, gm:{b:1.37,s:1.57,se:0.5}, ic:{b:0.15,s:1.28,se:0.41}} },
+  { slug:"istanbul", name:"Стамбул", icao:"LTFM", lat:41.276, lon:28.752, unit:"C", tier:"B", fams:{ec:{b:0.31,s:0.74,se:0.25}, gf:{b:-0.56,s:1.15,se:0.38}, gm:{b:0.62,s:0.82,se:0.27}, ic:{b:-0.07,s:0.44,se:0.15}} },
+  { slug:"qingdao", name:"Циндао", icao:"ZSQD", lat:36.362, lon:120.088, unit:"C", tier:"B", fams:{ec:{b:0.52,s:0.53,se:0.18}, gf:{b:-1.52,s:1.33,se:0.44}, gm:{b:0.13,s:0.97,se:0.32}, ic:{b:0.4,s:0.84,se:0.28}} },
+  { slug:"cape-town", name:"Кейптаун", icao:"FACT", lat:-33.965, lon:18.602, unit:"C", tier:"C", fams:{ec:{b:0.96,s:1.05,se:0.32}, gf:{b:1.12,s:1.03,se:0.31}, gm:{b:0.67,s:1.08,se:0.33}, ic:{b:1.16,s:2.16,se:0.65}} },
+  { slug:"manila", name:"Манила", icao:"RPLL", lat:14.509, lon:121.02, unit:"C", tier:"C", fams:{ec:{b:1.84,s:1.39,se:0.46}, gf:{b:1.21,s:1.62,se:0.54}, gm:{b:1.3,s:1.87,se:0.62}, ic:{b:-0.48,s:1.45,se:0.48}} },
+  { slug:"austin", name:"Остин", icao:"KAUS", lat:30.1975, lon:-97.6664, unit:"F", tier:"C", fams:{ec:{b:-0.56,s:1.18,se:0.37}, gf:{b:-2.86,s:0.93,se:0.29}, gm:{b:-0.17,s:1.63,se:0.51}, ic:{b:-0.34,s:1.12,se:0.36}} },
+  { slug:"busan", name:"Пусан", icao:"RKPK", lat:35.1795, lon:128.9382, unit:"C", tier:"C", fams:{ec:{b:-1.94,s:1.17,se:0.39}, gf:{b:-1.0,s:1.45,se:0.48}, gm:{b:0.27,s:1.49,se:0.5}, ic:{b:2.0,s:1.71,se:0.57}} },
+  { slug:"shenzhen", name:"Шэньчжэнь", icao:"ZGSZ", lat:22.6393, lon:113.8107, unit:"C", tier:"C", fams:{ec:{b:0.84,s:1.02,se:0.34}, gf:{b:0.12,s:1.69,se:0.56}, gm:{b:0.67,s:1.88,se:0.63}, ic:{b:0.26,s:1.67,se:0.56}} },
+  { slug:"san-francisco", name:"Сан-Франциско", icao:"KSFO", lat:37.6213, lon:-122.379, unit:"F", tier:"A", fams:{ec:{b:2.33,s:0.65,se:0.2}, gf:{b:0.29,s:0.67,se:0.21}, gm:{b:2.55,s:0.81,se:0.26}, ic:{b:-1.41,s:0.61,se:0.19}} },
+  { slug:"moscow", name:"Москва", icao:"UUWW", lat:55.5915, lon:37.2615, unit:"C", tier:"C", fams:{ec:{b:-0.06,s:2.25,se:0.79}, gf:{b:0.14,s:2.3,se:0.81}, gm:{b:-0.54,s:2.49,se:0.88}, ic:{b:-0.28,s:2.24,se:0.79}} },
 ];
 /* ночные минимумы: отдельная калибровка (2026-08-01), рынки Lowest temperature есть у 8 городов */
 const MIN_CAL = {  // ночные минимумы, калибровка v2 по семействам
@@ -234,13 +234,22 @@ const MONTHS = ["january","february","march","april","may","june","july","august
 const RU_D = ["вс","пн","вт","ср","чт","пт","сб"];
 const RU_M = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
 const LEAD_NAMES = ["сегодня","завтра","послезавтра"];
-const sigmaFor = lead => 0.6 + 0.15*lead;   // резерв, если у семейства нет калибровки
-const feeOf  = a => 0.05*a*(1-a);           // тейкер-комиссия Polymarket, $/акцию
-const allin  = a => a + feeOf(a);           // полная цена входа
-const LAMBDA = 0.25;                        // вес модели в пуле с рынком (фаза валидации)
-const EPS_T  = 0.001;
+const WEATHER_DAY_CAP = 5;   // фаза валидации: потолок ПОГОДНЫХ входов одной даты резолюции, $
+/* PARITY-CORE-START
+   Расчётное ядро, ОБЩЕЕ с src/wx_daily.py: вероятность, усадка к рынку,
+   комиссии конкретного рынка, исполнимые лоты, EV и итоговый вердикт.
+   Блок обязан оставаться чистым: ни DOM, ни сети. tests/parity/parity_test.js
+   выдёргивает его прямо из этого файла и сверяет с Python по числам —
+   расхождение веб-скринера и ночного джоба падает как тест. */
+const LAMBDA = 0.25;                 // вес СВОЕЙ модели в пуле с рынком (фаза валидации)
+const EPS_T  = 0.001;                // минимальный тик цены
+const COMBO_MIN_EV = 0.10;           // порог EV ПОСЛЕ расчёта исполнимых лотов
+const SINGLE_MIN_EV = 0.10;          // порог EV для одиночной ставки ПОСЛЕ расчёта исполнимых лотов
+const COMBO_MIN_LEGS = 2;            // комбо из одной ноги — не комбо
+const FEE_RATE_MAX = 0.20, TICK_MAX = 0.10, MIN_ORDER_MAX = 100;
+const EPS_M = 1e-9;                  // допуск двоичной дроби в деньгах
 
-/* ============ математика ============ */
+/* ---------- математика ---------- */
 function erf(x){
   const s = x < 0 ? -1 : 1; x = Math.abs(x);
   const t = 1/(1+0.3275911*x);
@@ -250,17 +259,6 @@ function erf(x){
 const phi = x => 0.5*(1+erf(x/Math.SQRT2));
 const f2c = f => (f-32)*5/9;
 
-function bucketProb(members, lo, hi, unit, bias, sigma){
-  let loC = lo, hiC = hi;
-  if (unit === "F"){ loC = lo>-900 ? f2c(lo) : -999; hiC = hi<900 ? f2c(hi) : 999; }
-  let tot = 0;
-  for (const x of members){
-    const xc = x + bias;
-    tot += (hiC>900 ? 1 : phi((hiC-xc)/sigma)) - (loC<-900 ? 0 : phi((loC-xc)/sigma));
-  }
-  return tot/members.length;
-}
-
 function parseBucket(t){
   t = (t||"").trim();
   let m = t.match(/^(-?\d+)°[CF] or below$/);      if (m) return [-999, +m[1]+0.5];
@@ -269,6 +267,658 @@ function parseBucket(t){
   m = t.match(/^(-?\d+)-(-?\d+)°[CF]$/);           if (m) return [+m[1]-0.5, +m[2]+0.5];
   return null;
 }
+
+/* Полное взаимоисключающее распределение исходов: от «или ниже» до «или выше»,
+   без дыр и наложений. Лог-пул считается ТОЛЬКО по такому набору. */
+function coverageOk(ranges){
+  const rs = ranges.slice().sort((a,z) => a[0]-z[0] || a[1]-z[1]);
+  if (rs.length < 2) return false;
+  if (rs[0][0] > -900 || rs[rs.length-1][1] < 900) return false;
+  for (let i = 0; i+1 < rs.length; i++) if (Math.abs(rs[i][1] - rs[i+1][0]) > 1e-9) return false;
+  return true;
+}
+
+/* ---------- торговые параметры КОНКРЕТНОГО рынка ---------- */
+function numOf(src, keys){
+  for (const k of keys){
+    const v = src[k];
+    if (v === null || v === undefined || v === "") continue;
+    const x = +v;
+    return Number.isFinite(x) ? x : null;
+  }
+  return null;
+}
+function feeRateOf(v){ return v === null ? null : (v > 1 ? v/10000 : v); }
+
+/* Ничего не угадываем: нет поля или значение вне санитарных границ — null,
+   и рынок не торгуется (fail-closed). */
+function parseMarketParams(m){
+  if (!m || typeof m !== "object") return null;
+  
+  // Читаем канонический fee schedule (feesEnabled + feeSchedule), если есть
+  let fee_rate_canonical = null;
+  if ("feesEnabled" in m) {
+    if (m.feesEnabled === false) {
+      fee_rate_canonical = 0.0;  // явно отключённые комиссии — валидное состояние
+    } else if (m.feesEnabled === true) {
+      const fs = m.feeSchedule;
+      if (fs && typeof fs === "object") {
+        const r = numOf(fs, ["rate"]);
+        const exp = numOf(fs, ["exponent"]);
+        const takerOnly = fs.takerOnly;
+        // Поддерживаем только exponent=2 (квадратичная кривая rate*price*(1-price)) и takerOnly=true
+        if (r !== null && (exp === null || exp === 2) && (takerOnly === undefined || takerOnly === true)) {
+          fee_rate_canonical = r;
+        } else {
+          return null;  // неподдерживаемый schedule → NO BET
+        }
+      } else {
+        return null;  // feesEnabled=true без feeSchedule → NO BET
+      }
+    }
+  }
+  
+  // Читаем legacy fee rate
+  const fee_rate_legacy = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
+  
+  // Проверяем конфликт: если оба присутствуют, они должны совпадать
+  let fee_rate = null;
+  if (fee_rate_canonical !== null && fee_rate_legacy !== null) {
+    // Оба присутствуют: проверяем согласованность (допуск на округление)
+    if (Math.abs(fee_rate_canonical - fee_rate_legacy) > 0.0001) {
+      return null;  // конфликт canonical vs legacy → NO BET
+    }
+    fee_rate = fee_rate_canonical;
+  } else if (fee_rate_canonical !== null) {
+    fee_rate = fee_rate_canonical;
+  } else {
+    fee_rate = fee_rate_legacy;
+  }
+  
+  const tick = numOf(m, ["minimum_tick_size","orderPriceMinTickSize","mts","tickSize"]);
+  const min_notional = numOf(m, ["minimum_order_size","orderMinSize","mos","minimumOrderSize"]);
+  const min_shares = numOf(m, ["minimum_order_size_shares","minSharesSize","minimumOrderShares"]) || 0;
+  if (fee_rate === null || tick === null || min_notional === null) return null;
+  if (!(fee_rate >= 0 && fee_rate <= FEE_RATE_MAX)) return null;
+  if (!(tick > 0 && tick <= TICK_MAX)) return null;
+  if (!(min_notional > 0 && min_notional <= MIN_ORDER_MAX)) return null;
+  if (min_shares < 0) return null;
+  return { fee_rate, tick, min_notional, min_shares, source: "market" };
+}
+/* Параметры события: обязаны быть у КАЖДОГО бакета, иначе null; при расхождении — худший вариант. */
+function eventParams(list){
+  if (!list || !list.length) return null;
+  const ps = [];
+  for (const m of list){ const p = parseMarketParams(m); if (!p) return null; ps.push(p); }
+  return { fee_rate: Math.max(...ps.map(p => p.fee_rate)), tick: Math.max(...ps.map(p => p.tick)),
+           min_notional: Math.max(...ps.map(p => p.min_notional)), min_shares: Math.max(...ps.map(p => p.min_shares)),
+           source: "event" };
+}
+function feeOf(price, mp){ return mp.fee_rate*price*(1-price); }   // $/акцию, ставка — рынка
+function allin(price, mp){ return price + feeOf(price, mp); }      // полная цена входа
+
+/* ---------- вероятность бакета ---------- */
+/* Ядро τ_f² = max(0.36, std_f² − СРЕДНИЙ ИСТОРИЧЕСКИЙ разброс ансамбля окна
+   калибровки). Разброс СЕГОДНЯШНЕГО прогноза вычитать нельзя: широкий сегодняшний
+   ансамбль механически сжимал бы ядро — ровно наоборот здравому смыслу.
+   Нет исторического разброса — не вычитаем ничего (ядро шире, консервативнее). */
+function famProb(day, lo, hi, unit, fams, lead, dbias){
+  dbias = dbias || 0;
+  const avail = ["ec","gf","ic","gm"].filter(f => (day[f]||[]).length >= 8);
+  if (!avail.length) return { p: null, byFam: {} };
+  const cals = fams || {};
+  const vals = Object.keys(cals).map(k => cals[k]);
+  const biasOf = c => (c.bias !== undefined ? c.bias : c.b);
+  const stdOf = c => (c.std !== undefined ? c.std : c.s);
+  const fb = vals.length ? vals.reduce((s,v) => s + biasOf(v), 0)/vals.length : 0;
+  const byFam = {};
+  let acc = 0;
+  const loC = unit === "F" ? (lo > -900 ? f2c(lo) : -999) : lo;
+  const hiC = unit === "F" ? (hi <  900 ? f2c(hi) :  999) : hi;
+  for (const f of avail){
+    const xs = day[f];
+    const c = cals[f];
+    const b = (c ? biasOf(c) : fb) + dbias*(c ? c.se : 0.5);
+    let tau;
+    if (c){
+      const sp = (c.spread2 === undefined || c.spread2 === null) ? 0 : c.spread2;
+      tau = Math.sqrt(Math.max(0.36, stdOf(c)*stdOf(c) - sp));
+    } else {
+      tau = 0.6 + 0.15*lead;
+    }
+    let tot = 0;
+    for (const x of xs){
+      const xc = x + b;
+      tot += (hiC > 900 ? 1 : phi((hiC-xc)/tau)) - (loC < -900 ? 0 : phi((loC-xc)/tau));
+    }
+    byFam[f] = tot/xs.length;
+    acc += byFam[f];
+  }
+  return { p: acc/avail.length, byFam };
+}
+
+/* Усадка к рынку: нормализованный лог-пул p^λ·q^(1−λ) по ПОЛНОМУ набору бакетов.
+   rows: [{p,pLo,pHi,mid}] -> [{p,pLo,pHi}] (усаженные). */
+function logPool(rows){
+  // Validate complete data: all rows must have p, pLo, pHi, mid
+  const complete = rows.filter(r => r.p != null && r.pLo != null && r.pHi != null && r.mid != null);
+  if (complete.length < rows.length){
+    throw new Error("неполный ансамбль бакетов — log pool требует полных данных по всем бакетам");
+  }
+  const qs = rows.reduce((s,r) => s + Math.max(r.mid, EPS_T), 0) || 1;
+  const qn = rows.map(r => Math.max(r.mid, EPS_T)/qs);
+  const out = rows.map(() => ({}));
+  for (const key of ["p","pLo","pHi"]){
+    const nums = rows.map((r,i) => Math.pow(Math.max(r[key], EPS_T), LAMBDA)*Math.pow(qn[i], 1-LAMBDA));
+    const z = nums.reduce((s,x) => s+x, 0) || 1;
+    nums.forEach((v,i) => { out[i][key] = v/z; });
+  }
+  return out;
+}
+
+/* ---------- контракт резолюции (fail-closed) ---------- */
+const RES_SOURCES = [["wunderground", ["wunderground","weather underground"]],
+                     ["noaa", ["noaa","national weather service","nws"]]];
+const ICAO_SET = new Set(["CYYZ","EDDM","EFHK","EGLC","EHAM","EPWA","FACT","KATL","KAUS","KBKF",
+  "KDAL","KHOU","KLAX","KLGA","KMIA","KORD","KSEA","KSFO","LEMD","LFPB","LIMC","LLBG","LTAC",
+  "LTFM","MMMX","NZWN","OEJN","OPKC","RCSS","RJTT","RKPK","RKSI","RPLL","SAEZ","SBGR","UUWW",
+  "VILK","WMKK","WSSS","ZBAA","ZGGG","ZGSZ","ZHHH","ZSPD","ZSQD","ZUCK","ZUUU"]);
+const STATION_STOP = new Set(["NOAA","ICAO","METAR","THIS","WILL","FROM","DATA","TIME","UTC",
+  "PLEASE","MARKET","YEAR","DATE","HIGH","LOWS","TEMP","USDC","ELSE"]);
+
+function resolutionFingerprint(desc){ return (desc||"").replace(/\s+/g," ").trim().toLowerCase(); }
+
+function parseResolution(desc){
+  const text = desc || "", low = text.toLowerCase();
+  const sources = RES_SOURCES.filter(([, keys]) => keys.some(k => low.includes(k))).map(([n]) => n).sort();
+  // Удаляем UI-инструкции перед разбором единиц: фраза "To toggle between X and Y"
+  // описывает настройку отображения, а не нормативную единицу резолюции.
+  let text_norm = text.replace(/[Tt]o toggle\b[^.!?\n]*[.!?]?/g, "");
+  text_norm = text_norm.replace(/[Cc]lick the gear\b[^.!?\n]*[.!?]?/g, "");
+  const low_norm = text_norm.toLowerCase();
+  const units = new Set();
+  for (const m of low_norm.matchAll(/degrees\s+(celsius|fahrenheit)/g)) units.add(m[1][0].toUpperCase());
+  for (const m of text_norm.matchAll(/°\s*([CF])\b/g)) units.add(m[1]);
+  for (const m of text_norm.matchAll(/\bdeg\s*([CF])\b/g)) units.add(m[1]);
+  const tokens = [...new Set(text.match(/\b[A-Z]{4}\b/g) || [])].filter(t => !STATION_STOP.has(t)).sort();
+  return { sources, units: [...units].sort(), stations: tokens,
+           known_stations: tokens.filter(t => ICAO_SET.has(t)), fingerprint: resolutionFingerprint(text) };
+}
+
+/* НЕ СТАВИМ, если правила: пустые; без источника; без станции; станция не та,
+   на которой калиброваны поправки; единицы не те; противоречивые; изменившиеся. */
+function checkResolution(eslug, desc, unit, station, seen){
+  seen = seen || {};
+  if (!(desc || "").trim()) return [false, { reason: "правила резолюции пусты", eslug }];
+  const r = parseResolution(desc);
+  const prev = seen[eslug];
+  seen[eslug] = r.fingerprint;
+  const fail = reason => [false, Object.assign({}, r, { reason, eslug })];
+  if (prev && prev !== r.fingerprint) return fail("правила резолюции изменились");
+  if (!r.sources.length) return fail("источник резолюции не распознан");
+  if (r.sources.length > 1) return fail("противоречивые источники: " + r.sources.join(", "));
+  if (!r.units.length) return fail("единицы измерения не распознаны");
+  if (r.units.length > 1) return fail("противоречивые единицы: " + r.units.join(", "));
+  if (r.units[0] !== unit) return fail(`рынок в °${r.units[0]}, модель в °${unit}`);
+  if (!r.stations.length) return fail("станция резолюции не распознана");
+  if (r.known_stations.length > 1) return fail("противоречивые станции: " + r.known_stations.join(", "));
+  if (!station || !r.stations.includes(station)) return fail(`станция рынка ${r.stations.join("/")} ≠ наша ${station || "—"}`);
+  return [true, Object.assign({}, r, { reason: null, eslug })];
+}
+
+/* ---------- размер и исполнимые лоты ---------- */
+function kellyStake(pBase, pCons, cost, bankroll, cap, depth){
+  if (!(cost > 0 && cost < 1) || pBase == null) return 0;
+  const pUse = pCons == null ? pBase : 0.5*(pBase + pCons);
+  const b = (1-cost)/cost;
+  const f = pUse - (1-pUse)/b;
+  if (f <= 0) return 0;
+  let st = bankroll*f*0.25;
+  if (depth) st = Math.min(st, depth);
+  st = Math.min(st, cap);
+  return st < 0.5 ? 0 : Math.max(st, 1);
+}
+
+/* centsUp: консервативное округление вверх до цента, но с допуском на двоичную
+   арифметику. Точный цент (например 0.07) не округляется выше из-за погрешности
+   0.07*100=7.000000000000001. Genuine sub-cent 1.494 → 1.50, точный 1.49 → 1.49. */
+const centsUp = x => {
+  const cents = x * 100;
+  const rounded = Math.round(cents);
+  if (Math.abs(cents - rounded) < EPS_M) return rounded / 100;
+  return Math.ceil(cents) / 100;
+};
+const centsDown = x => Math.floor(x*100 + EPS_M)/100;    // потолки: строго вниз
+const round1 = x => Math.round(x*10)/10;
+
+/* Обход книги: набираем до целевого числа акций, но не меньше минимального
+   ордера рынка и не дороже потолка. Деньги считаются с допуском EPS_M: нога
+   ровно на $1.00 обязана пройти, двоичная 0.9999999999999999 не должна её
+   отбраковывать. */
+function walkBook(levels, mp, targetShares, usdCap, priceLimit){
+  const minOrder = mp.min_notional;
+  const cap = centsDown(usdCap);
+  if (cap + EPS_M < minOrder) return null;
+  const wantSh = Math.max(targetShares, mp.min_shares || 0);
+  let sh = 0, usd = 0, lim = null;
+  for (const lv of levels){
+    const price = +lv[0], size = +lv[1];
+    if (!(price > 0) || !(size > 0)) continue;
+    // Stop walk if price exceeds limit
+    if (priceLimit != null && price > priceLimit + EPS_M) break;
+    const a = allin(price, mp);
+    if (!(a > 0)) continue;
+    let take = Math.max(wantSh - sh, 0);
+    if (usd + EPS_M < minOrder) take = Math.max(take, (minOrder - usd)/a);
+    if (take <= 0) break;
+    take = Math.min(take, size);
+    if (usd + a*take > cap + EPS_M){
+      take = (cap - usd)/a;
+      if (take <= 0) break;
+    }
+    sh += take; usd += a*take; lim = price;
+    if (sh + EPS_M >= wantSh && usd + EPS_M >= minOrder) break;
+  }
+  // Проверяем RAW usd против minOrder, не округлённое значение
+  if (sh <= 0 || usd + EPS_M < minOrder) return null;
+  return { sh, usd, lim };
+}
+
+/* Исполнимые лоты комбо. Порядок жёсткий: минимальный лот по правилам рынка →
+   отсев тонких ног → минимум две ноги → сумма минимумов в потолок
+   min(ставка, остаток бюджета) → и только потом добор до цели.
+   Итог: total_usd не превышает ни ставку, ни остаток бюджета. */
+function comboLots(step, mp, budgetLeft, books, thinMult){
+  thinMult = thinMult || 1.5;
+  const stake = +step.stake || 0;
+  budgetLeft = +budgetLeft || 0;
+  const cap = centsDown(Math.min(stake, budgetLeft));
+  const target = step.cost ? stake/step.cost : 0;
+  const skipped = [];
+  const fail = (reason, legs) => ({ lots: [], skipped, total_usd: 0,
+    min_usd: legs ? centsUp(legs.reduce((s,l) => s+l.min_usd, 0)) : null, p_covered: 0,
+    ev_final: null, stake: centsUp(stake), budget_left: centsUp(budgetLeft), ok: false, reason });
+  if (cap + EPS_M < mp.min_notional*COMBO_MIN_LEGS)
+    return fail(`доступно $${cap.toFixed(2)} — меньше ${COMBO_MIN_LEGS} минимальных ордеров по $${mp.min_notional}`);
+  const legs = [];
+  for (let i = 0; i < step.buckets.length; i++){
+    const b = step.buckets[i], ask = step.asks[i], tid = (step.tids||[])[i], pp = (step.leg_p||[])[i];
+    if (!ask || !tid){ skipped.push({ bucket: b, why: "нет книги" }); continue; }
+    const book = books ? books[tid] : null;
+    if (!book){ skipped.push({ bucket: b, why: "книга недоступна" }); continue; }
+    // Валидируем метаданные книги: min_order_size и tick_size обязательны
+    if (book.min_order_size == null || book.tick_size == null){
+      skipped.push({ bucket: b, why: "в книге отсутствует min_order_size или tick_size" });
+      continue;
+    }
+    // Проверяем разумность метаданных
+    if (!(book.min_order_size > 0) || !(book.tick_size > 0)){
+      skipped.push({ bucket: b, why: "некорректные метаданные книги" });
+      continue;
+    }
+    // book.min_order_size — это минимум в акциях (shares), не USDC
+    // mp.min_notional — минимум в USDC, mp.min_shares — минимум в акциях
+    // Правильно: держим их раздельно и используем max для акций, не для нотионала
+    const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
+    const leg_mp = Object.assign({}, mp, { 
+      min_shares: leg_min_shares
+    });
+    // Проверяем, что цена совместима с тиком
+    if (Math.abs(Math.round(ask / book.tick_size) * book.tick_size - ask) > EPS_M){
+      skipped.push({ bucket: b, why: `цена ${ask} несовместима с tick ${book.tick_size}` });
+      continue;
+    }
+    // Проверяем совместимость mp.tick (Gamma) и book.tick_size (CLOB)
+    if (mp.tick != null && book.tick_size != null){
+      if (Math.abs(mp.tick - book.tick_size) > EPS_M){
+        skipped.push({ bucket: b, why: `несовместимые тики: Gamma tick=${mp.tick} vs книга tick_size=${book.tick_size}` });
+        continue;
+      }
+    }
+    const levels = book.levels || [];
+    // Проверяем, что все цены в levels соответствуют объявленному tick
+    const sorted = levels.slice().sort((a,z) => a[0]-z[0]);
+    let tickMismatch = false;
+    for (const lv of sorted){
+      const price = +lv[0];
+      if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M){
+        skipped.push({ bucket: b, why: `книга: цена ${price} не кратна tick_size=${book.tick_size}` });
+        tickMismatch = true;
+        break;
+      }
+    }
+    if (tickMismatch) continue;
+    const got = walkBook(sorted, leg_mp, leg_mp.min_shares || 0, cap, null);
+    if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${leg_mp.min_notional}` }); continue; }
+    const eff = got.usd/got.sh;
+    if (eff > thinMult*allin(ask, leg_mp)){
+      skipped.push({ bucket: b, why: `тонкая книга: средняя ${(eff*100).toFixed(1)}¢ против аска ${(ask*100).toFixed(1)}¢` });
+      continue;
+    }
+    legs.push({ bucket: b, ask, p: pp, levels: sorted, min_shares: got.sh, min_usd: got.usd, limit: got.lim, leg_mp });
+  }
+  if (legs.length < COMBO_MIN_LEGS) return fail(`исполнимых ног ${legs.length} < ${COMBO_MIN_LEGS}`, legs);
+  const minTotal = legs.reduce((s,l) => s + l.min_usd, 0);
+  // Сравниваем RAW minTotal с RAW cap, не округлённые значения
+  if (minTotal > cap + EPS_M)
+    return fail(`минимальные лоты $${centsUp(minTotal).toFixed(2)} превышают доступное $${cap.toFixed(2)} `
+                + `(ставка $${stake.toFixed(2)}, остаток бюджета $${budgetLeft.toFixed(2)})`, legs);
+  const lots = [];
+  let running = 0;
+  for (let i = 0; i < legs.length; i++){
+    const l = legs[i];
+    const restMin = legs.slice(i+1).reduce((s,x) => s + x.min_usd, 0);
+    const leg_mp_use = l.leg_mp || mp;
+    const got = walkBook(l.levels, leg_mp_use, target, cap - running - restMin, null) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
+    running += got.usd;
+    lots.push({ bucket: l.bucket, ask: l.ask, limit: got.lim === null ? null : Math.round(got.lim*1000)/1000,
+                shares_raw: got.sh, usd_raw: got.usd, p: l.p });
+  }
+  
+  // Normalize shares to executable precision (1 decimal) and recompute costs
+  // to ensure returned shares don't exceed cap when executed
+  for (const lot of lots){
+    const sh_raw = lot.shares_raw;
+    // Round shares to 1 decimal (the precision we report and execute)
+    const sh_rounded = round1(sh_raw);
+    // Recompute cost from rounded shares
+    const ask = lot.ask;
+    const full_price = ask + mp.fee_rate * ask * (1 - ask);
+    const usd_from_rounded = sh_rounded * full_price;
+    // Store RAW usd for total calculation, but rounded shares
+    lot.shares = sh_rounded;
+    lot.usd_raw_rounded = usd_from_rounded;  // RAW for comparison
+    lot.usd = centsUp(usd_from_rounded);     // Rounded for display
+    lot.payout = sh_rounded;
+    delete lot.shares_raw;
+    delete lot.usd_raw;
+  }
+  
+  // Re-validate each leg after normalization: raw usd must still meet min_notional
+  // (Normalized shares will be less than or equal to raw, so no separate shares check needed)
+  for (const lot of lots){
+    const usd_raw = lot.usd_raw_rounded;
+    if (usd_raw + EPS_M < mp.min_notional){
+      const legs_for_fail = legs.map(l => ({ min_usd: l.min_usd }));
+      return fail(`после округления нога «${lot.bucket}» имеет raw debit $${usd_raw.toFixed(4)} < минимум $${mp.min_notional}`, legs_for_fail);
+    }
+  }
+  
+  // Recompute total from RAW usd values (before rounding), not from rounded usd
+  const total_from_rounded = lots.reduce((s,l) => s + l.usd_raw_rounded, 0);
+  
+  // Verify recomputed total doesn't exceed cap - NO TOLERANCE
+  // Compare raw execution cost to raw cap before presentation rounding
+  if (total_from_rounded > cap + EPS_M){
+    // Preserve min_usd by reconstructing legs with min_usd for fail function
+    const legs_for_fail = legs.map(l => ({ min_usd: l.min_usd }));
+    return fail(`после округления акций исполнимая стоимость $${total_from_rounded.toFixed(2)} превышает доступное $${cap.toFixed(2)}`, legs_for_fail);
+  }
+  
+  // Clean up temporary fields
+  for (const lot of lots) delete lot.usd_raw_rounded;
+  
+  const total = centsUp(total_from_rounded);
+  const expPay = lots.reduce((s,l) => s + (l.p || 0)*l.payout, 0);
+  return { lots, skipped, total_usd: total, min_usd: centsUp(minTotal),
+           p_covered: Math.round(lots.reduce((s,l) => s + (l.p || 0), 0)*1000)/1000,
+           ev_final: total > 0 ? Math.round((expPay/total - 1)*10000)/10000 : null,
+           stake: centsUp(stake), budget_left: centsUp(budgetLeft), ok: true, reason: null };
+}
+
+/* Вердикт BET разрешён ТОЛЬКО по исполнимой экономике: лоты рассчитаны, ног не
+   меньше двух, EV с комиссиями ≥ порога, сумма влезает в остаток бюджета. */
+function approveCombo(ex, budgetLeft, minEv, minLegs){
+  minEv = minEv === undefined ? COMBO_MIN_EV : minEv;
+  minLegs = minLegs === undefined ? COMBO_MIN_LEGS : minLegs;
+  if (!ex) return [false, "исполнимые лоты не рассчитаны"];
+  if (ex.err) return [false, "ошибка расчёта лотов: " + ex.err];
+  if (!ex.ok) return [false, ex.reason || "лоты не собраны"];
+  const lots = ex.lots || [];
+  if (lots.length < minLegs) return [false, `исполнимых ног ${lots.length} < ${minLegs}`];
+  if (ex.ev_final === null || ex.ev_final === undefined) return [false, "EV после исполнения не посчитан"];
+  if (ex.ev_final < minEv) return [false, `EV после исполнения ${ex.ev_final.toFixed(2)} < ${minEv.toFixed(2)}`];
+  const total = ex.total_usd || 0;
+  if (total <= 0) return [false, "нулевой размер"];
+  if (centsUp(total) > centsDown(budgetLeft) + EPS_M)
+    return [false, `сумма $${total.toFixed(2)} больше остатка бюджета $${(+budgetLeft).toFixed(2)}`];
+  if (centsUp(total) > centsUp(ex.stake || 0) + EPS_M)
+    return [false, `сумма $${total.toFixed(2)} больше запрошенной ставки $${(+ex.stake || 0).toFixed(2)}`];
+  return [true, "ok"];
+}
+
+/* Исполнимый арбитраж: полные цены с комиссиями ЭТОГО рынка, реальные уровни
+   книг и минимальный ордер на каждой ноге. «Сумма асков ниже единицы» сама по
+   себе не гарантия — без книги и комиссий это не арбитраж, а картинка. */
+function checkArbLegs(legs, mp, books){
+  let sets = null, cost = 0;
+  const legData = [];  // Store per-leg data including book min requirements
+  for (const [tid, quotedPrice] of legs){
+    if (!tid) return { ok: false, why: "нет идентификатора книги", exec_sets: 0, exec_profit: 0 };
+    const book = books ? books[tid] : null;
+    if (!book) return { ok: false, why: "книга недоступна", exec_sets: 0, exec_profit: 0 };
+    // Валидируем метаданные книги
+    if (book.min_order_size == null || book.tick_size == null)
+      return { ok: false, why: "книга без метаданных min_order_size/tick_size", exec_sets: 0, exec_profit: 0 };
+    if (!(book.min_order_size > 0) || !(book.tick_size > 0))
+      return { ok: false, why: "некорректные метаданные книги", exec_sets: 0, exec_profit: 0 };
+    // Проверяем совместимость mp.tick и book.tick_size
+    if (mp.tick != null && book.tick_size != null){
+      if (Math.abs(mp.tick - book.tick_size) > EPS_M)
+        return { ok: false, why: `несовместимые тики: Gamma=${mp.tick} vs книга=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
+    const levels = book.levels || [];
+    if (!levels.length) return { ok: false, why: "пустая книга", exec_sets: 0, exec_profit: 0 };
+    const asks = levels.slice().sort((a,z) => a[0]-z[0]);
+    // Проверяем, что все цены в levels соответствуют tick
+    for (const lv of asks){
+      const price = +lv[0];
+      if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
+        return { ok: false, why: `книга: цена ${price} не кратна tick=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
+    // Проверяем, что котируемая цена (если есть) совместима с tick
+    if (quotedPrice != null){
+      if (Math.abs(quotedPrice - Math.round(quotedPrice / book.tick_size) * book.tick_size) > EPS_M)
+        return { ok: false, why: `котируемая цена ${quotedPrice} не кратна tick=${book.tick_size}`, exec_sets: 0, exec_profit: 0 };
+    }
+    const price = +asks[0][0], size = +asks[0][1];
+    cost += allin(price, mp);
+    sets = sets === null ? size : Math.min(sets, size);
+    legData.push({ price, book_min_shares: +book.min_order_size });
+  }
+  sets = Math.floor(sets || 0);
+  const base = { exec_sets: sets, exec_cost: Math.round(cost*1000)/1000, exec_profit: 0 };
+  if (sets <= 0) return Object.assign(base, { ok: false, why: "в книге нет объёма" });
+  if (cost >= 1) return Object.assign(base, { ok: false, why: `полная цена комплекта ${cost.toFixed(3)} ≥ $1 — прибыли нет` });
+  // Проверяем минимум на каждой ноге: как USDC notional, так и shares
+  for (const leg of legData) {
+    const notional = allin(leg.price, mp) * sets;
+    if (notional + EPS_M < mp.min_notional)
+      return Object.assign(base, { ok: false, why: `объёма не хватает на минимальный ордер $${mp.min_notional} по каждой ноге` });
+    if (sets + EPS_M < leg.book_min_shares)
+      return Object.assign(base, { ok: false, why: `объём ${sets} акций < минимум книги ${leg.book_min_shares} акций на одной из ног` });
+  }
+  return Object.assign(base, { ok: true, why: null, exec_profit: Math.round((1-cost)*sets*100)/100 });
+}
+
+/* «Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка. */
+function chanceCombos(r, mp, maxN, minEv, minP, maxCost){
+  maxN = maxN || 4; minEv = minEv === undefined ? 0.15 : minEv;
+  minP = minP === undefined ? 0.40 : minP; maxCost = maxCost === undefined ? 0.90 : maxCost;
+  const cand = (r.buckets || [])
+    .filter(b => b.ask != null && b.ask >= 0.03 && b.ask <= 0.9 && b.p >= 0.03)
+    .sort((a,z) => z.p/allin(z.ask, mp) - a.p/allin(a.ask, mp));
+  const steps = [], S = [];
+  let cost = 0, P = 0, Plo = 0, Phi = 0;
+  for (const b of cand){
+    if (S.length >= maxN) break;
+    const ca = allin(b.ask, mp);
+    if (cost + ca > maxCost) continue;
+    if ((P + b.p)/(cost + ca) - 1 < minEv) break;
+    S.push(b); cost += ca; P += b.p; Plo += b.pLo; Phi += b.pHi;
+    if (S.length >= COMBO_MIN_LEGS && P >= minP){
+      const legs = S.slice().sort((a,z) => a.lo - z.lo);
+      steps.push({ r, mp, buckets: legs, tids: legs.map(b => b.tid), asks: legs.map(b => b.ask),
+                   leg_p: legs.map(b => b.p), cost, pWin: P,
+                   pLo: Math.min(Plo, Phi), pHi: Math.max(Plo, Phi) });
+    }
+  }
+  return steps;
+}
+
+/* Исполнимый лот для одиночной ставки: book walk с валидацией метаданных. */
+function singleLot(pick, mp, budgetLeft, book, probability){
+  if (!pick) return { ok: false, shares: 0, usd: 0, reason: "нет pick" };
+  if (!mp) return { ok: false, shares: 0, usd: 0, reason: "нет торговых параметров (mp)" };
+  if (!pick.token_id) return { ok: false, shares: 0, usd: 0, reason: "нет token_id" };
+  if (!book) return { ok: false, shares: 0, usd: 0, reason: "книга недоступна" };
+  // Validate book metadata
+  if (book.min_order_size == null || book.tick_size == null)
+    return { ok: false, shares: 0, usd: 0, reason: "книга без метаданных min_order_size/tick_size" };
+  if (!(book.min_order_size > 0) || !(book.tick_size > 0))
+    return { ok: false, shares: 0, usd: 0, reason: "некорректные метаданные книги" };
+  // Validate price/tick compatibility
+  const ask = +pick.ask;
+  if (Math.abs(ask - Math.round(ask / book.tick_size) * book.tick_size) > EPS_M)
+    return { ok: false, shares: 0, usd: 0, reason: `цена ${ask} несовместима с tick=${book.tick_size}` };
+  if (mp.tick != null && Math.abs(mp.tick - book.tick_size) > EPS_M)
+    return { ok: false, shares: 0, usd: 0, reason: `несовместимые тики: Gamma=${mp.tick} vs книга=${book.tick_size}` };
+  const levels = book.levels || [];
+  if (!levels.length) return { ok: false, shares: 0, usd: 0, reason: "пустая книга" };
+  // Validate all prices in levels match tick
+  for (const lv of levels){
+    const price = +lv[0];
+    if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
+      return { ok: false, shares: 0, usd: 0, reason: `книга: цена ${price} не кратна tick=${book.tick_size}` };
+  }
+  // Use ask as the execution price limit - never consume worse levels
+  const executionLimit = ask;
+  const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
+  const leg_mp = Object.assign({}, mp, { min_shares: leg_min_shares });
+  const stake = +pick.stake || 0;
+  const cap = centsDown(Math.min(stake, +budgetLeft || 0));
+  const got = walkBook(levels, leg_mp, leg_min_shares, cap, executionLimit);
+  if (!got)
+    return { ok: false, shares: 0, usd: 0, 
+             reason: `в книге нет объёма на минимум $${leg_mp.min_notional} / ${leg_min_shares} акций` };
+  // Normalize shares to supported precision BEFORE recomputing totals
+  const norm_sh = round1(got.sh);
+  // Recompute fee-inclusive debit from normalized shares
+  const full_price = allin(got.lim, mp);
+  const recomp_usd = norm_sh * full_price;
+  const final_usd = centsUp(recomp_usd);
+  // Re-validate post-normalization: raw debit must meet min_notional,
+  // and shares must meet book minimum (which may be stricter than the normalized result)
+  if (recomp_usd + EPS_M < mp.min_notional)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций raw debit $${recomp_usd.toFixed(4)} < минимум $${mp.min_notional}` };
+  // Book min_order_size is in shares and must be met even after rounding
+  if (norm_sh + EPS_M < book.min_order_size)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций ${norm_sh.toFixed(1)} < book min_order_size ${book.min_order_size}` };
+  // Recheck cap with recomputed cost
+  if (recomp_usd > cap + EPS_M)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций стоимость ${final_usd.toFixed(2)} превышает лимит ${cap.toFixed(2)}` };
+  // Compute fee-inclusive EV if probability provided
+  let ev_final = null;
+  if (probability != null){
+    // EV = (expected_payout - cost) / cost = (p * shares - cost) / cost = (p - full_price) / full_price
+    ev_final = (probability - full_price) / full_price;
+    if (ev_final < SINGLE_MIN_EV - EPS_M)
+      return { ok: false, shares: 0, usd: 0, ev_final,
+               reason: `EV после исполнения ${(ev_final*100).toFixed(1)}% < порог ${(SINGLE_MIN_EV*100).toFixed(0)}%` };
+  }
+  return { ok: true, shares: norm_sh, usd: final_usd, limit: got.lim, ev_final, reason: null };
+}
+
+/* Маленький распределитель только на текущий web-прогон. У каждой даты
+   резолюции свой WEATHER_DAY_CAP, но все даты одновременно делят общий limit. */
+function createRunBudget(overallLimit, perDateLimit){
+  let overallLeft = centsDown(Math.max(0, +overallLimit || 0));
+  const dateLeft = Object.create(null);
+  const perDate = centsDown(Math.max(0, +perDateLimit || 0));
+  const ensure = dateStr => {
+    if (!dateStr) return false;
+    if (dateLeft[dateStr] === undefined) dateLeft[dateStr] = perDate;
+    return true;
+  };
+  const remaining = dateStr => {
+    if (!ensure(dateStr)) return 0;
+    return centsDown(Math.max(0, Math.min(dateLeft[dateStr], overallLeft)));
+  };
+  const reserve = (dateStr, usd) => {
+    const amount = centsUp(+usd || 0);
+    if (!(amount > 0) || amount > remaining(dateStr) + EPS_M) return false;
+    dateLeft[dateStr] = centsDown(Math.max(0, dateLeft[dateStr] - amount));
+    overallLeft = centsDown(Math.max(0, overallLeft - amount));
+    return true;
+  };
+  const snapshot = () => ({
+    overall_left: overallLeft,
+    by_date: Object.fromEntries(Object.keys(dateLeft).sort().map(d => [d, remaining(d)]))
+  });
+  return { remaining, reserve, snapshot };
+}
+
+/* Нормализуем обе стороны 5/5 в один детерминированный список. Для финального
+   EV используется только осторожная вероятность: YES=min(pLo,pHi),
+   NO=1-max(pLo,pHi). */
+function singleCandidates(picks){
+  const out = [];
+  for (const group of (picks || [])){
+    const r = group.r || {};
+    if (group.yes && group.yes.conf === 5){
+      const s = group.yes;
+      out.push({ side: "YES", r, vSide: s, token_id: s.b && (s.b.tidYes || s.b.tid),
+                 pBase: s.p, pCons: Math.min(s.pLo == null ? s.p : s.pLo,
+                                             s.pHi == null ? s.p : s.pHi),
+                 ask: s.ask, cost: s.cost });
+    }
+    if (group.no && group.no.conf === 5){
+      const s = group.no;
+      out.push({ side: "NO", r, vSide: s, token_id: s.b && s.b.tidNo,
+                 pBase: 1-s.p, pCons: 1-Math.max(s.pLo == null ? s.p : s.pLo,
+                                                s.pHi == null ? s.p : s.pHi),
+                 ask: s.ask, cost: s.cost });
+    }
+  }
+  return out;
+}
+
+/* Исполняем кандидатов по порядку до первого реального BET. Неудачный первый
+   кандидат не скрывает следующий; бюджет резервируется только после ok=true. */
+async function findExecutableSingle(candidates, budget, execute){
+  const checked = [];
+  for (let index = 0; index < (candidates || []).length; index++){
+    const candidate = candidates[index];
+    const dateStr = candidate.r ? candidate.r.dateStr : candidate.dateStr;
+    const left = budget.remaining(dateStr);
+    if (!(left > 0)){
+      checked.push({ index, reason: "бюджет даты или общий лимит исчерпан" });
+      continue;
+    }
+    const exec = await execute(candidate, left);
+    if (!exec || !exec.ok){
+      checked.push({ index, reason: (exec && exec.reason) || "не исполняется" });
+      continue;
+    }
+    if (!budget.reserve(dateStr, exec.usd)){
+      checked.push({ index, reason: "исполнимая сумма не поместилась в остаток бюджета" });
+      continue;
+    }
+    return { exec, candidate, index, checked };
+  }
+  return { exec: null, candidate: null, index: null, checked };
+}
+
+
+var PARITY_CORE = { erf, phi, f2c, parseBucket, coverageOk, parseMarketParams, eventParams,
+  feeOf, allin, famProb, logPool, parseResolution, checkResolution, kellyStake,
+  walkBook, comboLots, approveCombo, checkArbLegs, chanceCombos, singleLot,
+  createRunBudget, singleCandidates, findExecutableSingle,
+  LAMBDA, EPS_T, COMBO_MIN_EV, SINGLE_MIN_EV, COMBO_MIN_LEGS };
+/* PARITY-CORE-END */
 
 /* ============ загрузка ============ */
 async function fetchJSON(url, tries = 3){
@@ -284,6 +934,66 @@ async function fetchJSON(url, tries = 3){
   }
 }
 
+const RES_SEEN = {};   // eslug -> отпечаток правил: смена правил внутри прогона = стоп
+
+/* Тир и калибровка СВОЕГО горизонта: суточная калибровка не даёт права
+   торговать двухсуточный прогноз. Нет данных на горизонт — тир C (стоп). */
+function calTier(cal, lead){
+  if (!cal) return "C";
+  const t = cal.tiers || {};
+  const v = t[String(lead)];
+  if (v) return v;
+  return lead <= 1 ? (cal.tier || "C") : "C";
+}
+function calFams(cal, lead){
+  if (!cal) return null;
+  if (lead >= 2) return cal.fams2 || null;
+  return cal.fams || null;
+}
+
+/* Торговые параметры события: сначала поля Gamma, при нехватке — добор из CLOB
+   по conditionId. Не удалось подтвердить хотя бы по одному бакету — null. */
+const MP_CACHE = {};
+async function fetchEventParams(markets){
+  if (!markets || !markets.length) return null;
+  const ps = [];
+  for (const m of markets){
+    let p = parseMarketParams(m);
+    if (!p){
+      const cid = m.conditionId || m.condition_id;
+      if (!cid) return null;
+      if (!(cid in MP_CACHE)){
+        try { MP_CACHE[cid] = await fetchJSON("https://clob.polymarket.com/markets/" + cid, 2); }
+        catch(e){ MP_CACHE[cid] = null; }
+      }
+      if (!MP_CACHE[cid]) return null;
+      p = parseMarketParams(Object.assign({}, m, MP_CACHE[cid]));
+    }
+    if (!p) return null;
+    ps.push(p);
+  }
+  return eventParams(ps.map(p => ({ taker_base_fee: p.fee_rate, minimum_tick_size: p.tick,
+                                    minimum_order_size: p.min_notional,
+                                    minimum_order_size_shares: p.min_shares })));
+}
+
+/* Уровни книги для расчёта исполнимых лотов: [[цена, размер], ...] */
+async function fetchBookLevels(tid){
+  if (!tid) return null;
+  try {
+    const b = await fetchJSON("https://clob.polymarket.com/book?token_id=" + tid, 2);
+    const levels = (b.asks || []).map(a => [+a.price, +a.size]).sort((x,z) => x[0]-z[0]);
+    const min_order_size = numOf(b, ["min_order_size", "minOrderSize"]);
+    const tick_size = numOf(b, ["tick_size", "tickSize"]);
+    return { levels, min_order_size, tick_size };
+  } catch(e){ return null; }
+}
+async function fetchBooks(tids){
+  const out = {};
+  await Promise.all((tids || []).filter(Boolean).map(async t => { out[t] = await fetchBookLevels(t); }));
+  return out;
+}
+
 function slugFor(city, dateStr){
   const d = new Date(dateStr + "T12:00:00");
   return `${MODE === "min" ? "lowest" : "highest"}-temperature-in-${city.slug}-on-${MONTHS[d.getMonth()]}-${d.getDate()}-${d.getFullYear()}`;
@@ -293,35 +1003,6 @@ const fmtDateRu = ds => { const d = new Date(ds + "T12:00:00"); return `${RU_D[d
 /* один запрос ансамбля на город на весь горизонт */
 const famOf = k => k.includes("ecmwf") ? "ec" : k.includes("icon") ? "ic" : k.includes("gem") ? "gm" : "gf";
 
-/* P(бакет) v2: равный вес семейств; каждому члену поправка ЕГО семейства;
-   ядро τ² = max(0.36, s² − разброс_ансамбля²); dbias=±1 — стресс на ±SE семейства */
-function famProb(day, lo, hi, unit, fams, lead, dbias = 0){
-  const avail = ["ec","gf","ic","gm"].filter(f => (day[f]||[]).length >= 8);
-  if (!avail.length) return { p: null, byFam: {} };
-  const cals = fams || {};
-  const known = Object.values(cals);
-  const fb = known.length ? known.reduce((s,v)=>s+v.b,0)/known.length : 0;
-  const byFam = {};
-  let acc = 0;
-  for (const f of avail){
-    const xs = day[f];
-    const mu = xs.reduce((s,x)=>s+x,0)/xs.length;
-    const s2 = xs.reduce((s,x)=>s+(x-mu)*(x-mu),0)/xs.length;
-    const c = cals[f];
-    const b = (c ? c.b : fb) + dbias*(c ? c.se : 0.5);
-    const tau = Math.sqrt(c ? Math.max(0.36, c.s*c.s - s2) : Math.pow(0.6+0.15*lead,2));
-    let tot = 0;
-    const loC = unit === "F" ? (lo>-900 ? f2c(lo) : -999) : lo;
-    const hiC = unit === "F" ? (hi< 900 ? f2c(hi) :  999) : hi;
-    for (const x of xs){
-      const xc = x + b;
-      tot += (hiC>900 ? 1 : phi((hiC-xc)/tau)) - (loC<-900 ? 0 : phi((loC-xc)/tau));
-    }
-    byFam[f] = tot/xs.length;
-    acc += byFam[f];
-  }
-  return { p: acc/avail.length, byFam };
-}
 
 async function fetchCityEnsemble(city, startDate, endDate){
   const ens = await fetchJSON("https://ensemble-api.open-meteo.com/v1/ensemble?" + new URLSearchParams({
@@ -361,52 +1042,64 @@ async function screenCityDate(city, dateStr, lead, ensData){
       ? "минимум дня формируется на рассвете — после 06:00 местного преимущество у рынка"
       : "после 12:00 местного рынок видит живые показания станции — преимущество не у нас" };
   }
-  const evArr = await fetchJSON("https://gamma-api.polymarket.com/events?slug=" + slugFor(city, dateStr));
+  const eslug = slugFor(city, dateStr);
+  const evArr = await fetchJSON("https://gamma-api.polymarket.com/events?slug=" + eslug);
   const ev = evArr && evArr[0];
   if (!ev) return { city, dateStr, lead, skip: "рынок ещё не открыт" };
   if (ev.closed) return { city, dateStr, lead, skip: "рынок закрыт" };
+  // fail-closed контракт резолюции: источник, станция и единицы — из ПРАВИЛ рынка
+  const [resOk, resDet] = checkResolution(eslug, ev.description, city.unit, city.icao, RES_SEEN);
+  if (!resOk) return { city, dateStr, lead, skip: "контракт резолюции: " + resDet.reason };
+  const bucketMarkets = ev.markets.filter(m => parseBucket(m.groupItemTitle));
+  // торговые параметры КОНКРЕТНОГО рынка (комиссия, шаг, минимальный ордер)
+  const mp = await fetchEventParams(bucketMarkets);
+  if (!mp) return { city, dateStr, lead, skip: "торговые параметры рынка не подтверждены — ставки нет" };
   // индекс неэффективности книги: сумма ask по всем бакетам (у честного рынка ≈ $1.02-1.10)
-  const allAsks = ev.markets.filter(m => parseBucket(m.groupItemTitle)).map(m => m.bestAsk);
+  const allAsks = bucketMarkets.map(m => m.bestAsk);
   const sumAsk = (allAsks.length >= 5 && allAsks.every(a => a != null))
     ? +allAsks.reduce((s,a) => s+a, 0).toFixed(3) : null;
+  const sumAllin = (allAsks.length >= 5 && allAsks.every(a => a != null))
+    ? +allAsks.reduce((s,a) => s+allin(a, mp), 0).toFixed(3) : null;
   const day = ensData.byDate[dateStr];
   if (!day || day.all.length < 20) return { city, dateStr, lead, skip: "мало данных ансамбля" };
 
-  const famsCal = cal.fams || null;   // калибровка v2 по семействам (или null у тира C без данных)
+  const famsCal = calFams(cal, lead);   // калибровка СВОЕГО горизонта (1 или 2 суток)
+  const tier = calTier(cal, lead);
   const db = 0.5;                     // подпись в карточке; сам стресс идёт по SE семейств
+  const titled = ev.markets.filter(m => m.groupItemTitle);
+  if (titled.some(m => !parseBucket(m.groupItemTitle)))
+    return { city, dateStr, lead, skip: "нераспознанные бакеты — распределение исходов неполное, пул не считаем" };
   const buckets = [];
-  for (const m of ev.markets){
+  for (const m of bucketMarkets){
     const rng = parseBucket(m.groupItemTitle);
-    if (!rng) continue;
     let prices = m.outcomePrices;
     if (typeof prices === "string"){ try { prices = JSON.parse(prices); } catch(e){ prices = null; } }
     const bb = m.bestBid ?? null, ba = m.bestAsk ?? null;
     const mid = (bb != null && ba != null) ? (bb+ba)/2 : (prices ? +prices[0] : null);
-    if (mid == null) continue;
+    if (mid == null) return { city, dateStr, lead, skip: `у бакета «${m.groupItemTitle}» нет цены — пул не считаем` };
     const base = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, 0);
-    if (base.p == null) continue;
+    if (base.p == null) return { city, dateStr, lead, skip: "нет модельной вероятности бакета — пул не считаем" };
     const lo1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, -1).p;
     const hi1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, +1).p;
-    let tid = null;
-    try { const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds; tid = (t && t[0]) || null; } catch(e){}
+    let tid = null, tidYes = null, tidNo = null;
+    try {
+      const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
+      if (t && t.length >= 2) { tidYes = t[0]; tidNo = t[1]; tid = t[0]; }
+      else if (t && t[0]) { tid = t[0]; tidYes = t[0]; }
+    } catch(e){}
     buckets.push({
-      title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid,
+      title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid, tidYes, tidNo,
       pRaw: base.p, pLoRaw: lo1, pHiRaw: hi1, fams: base.byFam,
     });
   }
-  // усадка к рынку: нормализованный лог-пул p^λ·q^(1−λ) по бакетам события (фаза валидации)
-  if (buckets.length >= 3){
-    const qsum = buckets.reduce((s,b)=>s+Math.max(b.mid,EPS_T),0) || 1;
-    for (const key of [["pRaw","p"],["pLoRaw","pLo"],["pHiRaw","pHi"]]){
-      const nums = buckets.map(b => Math.pow(Math.max(b[key[0]],EPS_T),LAMBDA) * Math.pow(Math.max(b.mid,EPS_T)/qsum,1-LAMBDA));
-      const z = nums.reduce((s,x)=>s+x,0) || 1;
-      buckets.forEach((b,i)=>{ b[key[1]] = nums[i]/z; });
-    }
-  } else {
-    for (const b of buckets){ b.p = b.pRaw; b.pLo = b.pLoRaw; b.pHi = b.pHiRaw; }
-  }
-  return { city, dateStr, lead, volume: +ev.volume || 0, buckets, db, sumAsk, cal, mode: MODE,
-           link: "https://polymarket.com/event/" + slugFor(city, dateStr) };
+  // усадка к рынку допустима ТОЛЬКО по полному взаимоисключающему набору исходов:
+  // нормировать неполное подмножество к единице значит выдумать вероятность
+  if (buckets.length < 3 || !coverageOk(buckets.map(b => [b.lo, b.hi])))
+    return { city, dateStr, lead, skip: "распределение исходов неполное — усадку к рынку не считаем" };
+  const pooled = logPool(buckets.map(b => ({ p: b.pRaw, pLo: b.pLoRaw, pHi: b.pHiRaw, mid: b.mid })));
+  buckets.forEach((b,i) => { b.p = pooled[i].p; b.pLo = pooled[i].pLo; b.pHi = pooled[i].pHi; });
+  return { city, dateStr, lead, volume: +ev.volume || 0, buckets, db, sumAsk, sumAllin, cal, tier, mp,
+           mode: MODE, eslug, link: "https://polymarket.com/event/" + eslug };
 }
 
 /* ============ глубина стакана (CLOB) ============ */
@@ -431,31 +1124,31 @@ function findTrades(r){
   const out = [];
   if (r.skip || r.volume < 10000) return out;
   const volPen = r.volume < 30000 ? 1 : 0;
-  const c = r.cal;
+  const mp = r.mp;
   for (const b of r.buckets){
     const { ask, bid, mid, p } = b;   // p — рабочая (усаженная к рынку); b.pRaw — сырая модельная
     const famVals = Object.values(b.fams);
     if (ask != null){
-      const cFull = allin(ask);       // полная цена с тейкер-комиссией
+      const cFull = allin(ask, mp);   // полная цена с комиссией ЭТОГО рынка
       if (cFull >= 0.04 && cFull <= 0.30 && p >= 1.8*cFull && b.pRaw >= 2*ask && p >= 0.05){
         const robust = b.pLo >= 1.4*cFull && b.pHi >= 1.4*cFull;
         const mn = famVals.length ? Math.min(...famVals) : b.pRaw;
         const agreeBonus = mn >= 0.5*b.pRaw ? 1 : (mn < 0.25*b.pRaw ? -1 : 0);
         const spread = bid != null ? ask-bid : ask;
         let conf = 3 + (robust?1:0) + agreeBonus - (spread>0.08?1:0) - volPen - (r.lead>=2?1:0);
-        if (c.tier === "C") conf = Math.min(conf, 2);
+        if (r.tier === "C") conf = Math.min(conf, 2);
         out.push({ side:"YES", r, b, cost: cFull, ask, ev: p*(1/cFull-1)-(1-p),
                    conf: Math.max(1, Math.min(5, conf)), robust, split: mn < 0.5*b.pRaw, thin: volPen>0 });
       }
     }
     if (bid != null && mid >= 0.25 && (mid-p) >= 0.12){
-      const cFull = allin(1-bid);
+      const cFull = allin(1-bid, mp);
       const robust = (mid-b.pHi >= 0.08) && (mid-b.pLo >= 0.08);
       const agree = famVals.every(pf => mid-pf >= 0.10);
       const refute = famVals.some(pf => pf >= mid);
       const agreeBonus = agree ? 1 : (refute ? -1 : 0);
       let conf = 3 + (robust?1:0) + agreeBonus - volPen - (r.lead>=2?1:0);
-      if (c.tier === "C") conf = Math.min(conf, 2);
+      if (r.tier === "C") conf = Math.min(conf, 2);
       out.push({ side:"NO", r, b, cost: cFull, ask: 1-bid, ev: (1-p)*(1/cFull-1)-p,
                  conf: Math.max(1, Math.min(5, conf)), robust, split: refute, thin: volPen>0 });
     }
@@ -463,41 +1156,7 @@ function findTrades(r){
   return out;
 }
 
-/* ============ рекомендуемый размер ставки: четверть Келли ============ */
-function kellyStake(pBase, pCons, cost, bankroll, cap, depth){
-  // осторожная вероятность = среднее базовой и стрессовой: чем шире разброс, тем меньше ставка
-  if (!(cost > 0 && cost < 1) || pBase == null) return 0;
-  const pUse = pCons == null ? pBase : 0.5*(pBase + pCons);
-  const b = (1-cost)/cost;
-  const f = pUse - (1-pUse)/b;            // доля Келли
-  if (f <= 0) return 0;                    // преимущества нет — не ставим
-  let st = bankroll*f*0.25;
-  if (depth) st = Math.min(st, depth);
-  st = Math.min(st, cap);
-  return st < 0.5 ? 0 : Math.max(st, 1);
-}
 
-/* ============ шанс-комбо: вероятность выше — прибыль меньше ============ */
-function chanceCombos(r){
-  // Равные доли в 2–4 бакетах одного рынка: платим sum(ask) за $1 выплаты,
-  // выигрыш — если исход попал в ЛЮБОЙ бакет набора. Жадный набор по ценности p/ask.
-  if (r.skip || (r.volume || 0) < 10000) return [];
-  const cand = r.buckets
-    .filter(b => b.ask != null && b.ask >= 0.03 && b.ask <= 0.9 && b.p >= 0.03)  // фаза валидации: ноги < 3¢ запрещены
-    .sort((a,z) => z.p/allin(z.ask) - a.p/allin(a.ask));
-  const steps = []; const S = []; let cost = 0, P = 0, Plo = 0, Phi = 0;
-  for (const b of cand){
-    if (S.length >= 4) break;
-    const ca = allin(b.ask);                       // полная цена ноги с комиссией
-    if (cost + ca > 0.90) continue;
-    if ((P + b.p)/(cost + ca) - 1 < 0.15) break;
-    S.push(b); cost += ca; P += b.p; Plo += b.pLo; Phi += b.pHi;
-    if (S.length >= 2 && P >= 0.40)
-      steps.push({ r, buckets: [...S].sort((a,z) => a.lo - z.lo), cost, pWin: P,
-                   pLo: Math.min(Plo, Phi), pHi: Math.max(Plo, Phi) });
-  }
-  return steps;
-}
 
 /* ============ UI ============ */
 const $ = id => document.getElementById(id);
@@ -568,7 +1227,7 @@ function cityCard(g, stake, rank){
   }
   const depthTxt = depthParts.length ? ` · глубина по цене входа: ${depthParts.join(" / ")}` : "";
   const bkr = Math.max(5, +$("bankrollInput").value || 34), lim = Math.max(1, +$("limitInput").value || 6);
-  const stY = Y ? kellyStake(Y.b.p, Math.min(Y.b.pLo, Y.b.pHi), allin(Y.b.ask), bkr, lim, Y.depth) : 0;
+  const stY = Y ? kellyStake(Y.b.p, Math.min(Y.b.pLo, Y.b.pHi), allin(Y.b.ask, r.mp), bkr, lim, Y.depth) : 0;
   const stN = N ? kellyStake(1-N.b.p, 1-Math.max(N.b.pLo, N.b.pHi), N.cost, bkr, lim, N.depth) : 0;
   const sizeLine = `<div class="why" style="margin-top:-4px"><b>Рекомендуемый размер</b> (четверть Келли от банкролла $${bkr}): ${[Y ? `YES ${stY ? "$"+stY.toFixed(2) : "не ставить"}` : null, N ? `NO ${stN ? "$"+stN.toFixed(2) : "не ставить"}` : null].filter(Boolean).join(" · ")} · исполнение: цена &lt;10¢ или тонкий стакан — лимит по аску, иначе можно маркетом</div>`;
   const cal = r.cal;
@@ -588,7 +1247,7 @@ function cityCard(g, stake, rank){
     <div class="legend"><span class="l-model">модель (наша оценка)</span><span class="l-market">рынок (цена)</span></div>
     <div class="bars">${top}</div>
     ${payout}
-    <div class="meta">${famLine(ref)} · калибровка v2 ${r.mode === "min" ? "минимумов " : ""}тир ${cal.tier} · ${robustNote} · спред ${ref.bid != null ? fmtC(ref.ask-ref.bid) : "—"} · объём $${Math.round(r.volume).toLocaleString("en-US")}${depthTxt}</div>
+    <div class="meta">${famLine(ref)} · калибровка v2 ${r.mode === "min" ? "минимумов " : ""}тир ${r.tier} (горизонт ${LEAD_NAMES[r.lead]}) · ${robustNote} · спред ${ref.bid != null ? fmtC(ref.ask-ref.bid) : "—"} · объём $${Math.round(r.volume).toLocaleString("en-US")}${depthTxt}</div>
     ${chips.length ? `<div class="chips">${chips.join("")}</div>` : ""}
     <div style="margin-top:10px"><a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть рынок (резолюция — местный день города) →</a></div>
   </div>`;
@@ -715,25 +1374,32 @@ async function scan(){
   const groups = [...byKey.values()]
     .map(g => ({ ...g, score: (g.yes ? g.yes.ev*g.yes.conf : 0) + (g.no ? g.no.ev*g.no.conf : 0) }))
     .sort((a,z) => z.score - a.score);
-  const picks = groups.slice(0, 6);
-  const rest = groups.slice(6);
-  // автопроверка глубины стакана для ног топ-сетапов
+  // Evaluate ALL candidates, not just first 6
+  const picks = groups;
+  // автопроверка глубины стакана для ног топ-сетапов (только топ 10 для производительности)
   prog.textContent = "Проверяю глубину стаканов…";
-  await Promise.all(picks.flatMap(g => [
+  await Promise.all(picks.slice(0, 10).flatMap(g => [
     g.yes ? fetchDepth(g.yes.b, "YES").then(d => { g.yes.depth = d; }) : null,
     g.no  ? fetchDepth(g.no.b,  "NO").then(d => { g.no.depth = d; })  : null,
   ].filter(Boolean)));
   const watch = trades.filter(t => t.conf === 3);
-  const blocked = trades.filter(t => t.conf <= 2 && t.r.cal.tier === "C");
+  const blocked = trades.filter(t => t.conf <= 2 && t.r.tier === "C");
   const skipped = results.filter(r => r.skip);
 
   // арбитраж и неэффективность книг
-  const ineff = results.filter(r => !r.skip && r.sumAsk != null).sort((a,z) => a.sumAsk - z.sumAsk);
-  const pureArb = ineff.filter(r => r.sumAsk < 0.99);
+  const ineff = results.filter(r => !r.skip && r.sumAllin != null).sort((a,z) => a.sumAllin - z.sumAllin);
+  // кандидаты в арбитраж считаются по ПОЛНЫМ ценам с комиссиями; исполнимость проверяется по книгам ниже
+  const arbCand = ineff.filter(r => r.sumAllin < 0.995).slice(0, 3);
+  const pureArb = [];
+  for (const r of arbCand){
+    const bs = await fetchBooks(r.buckets.map(b => b.tid));
+    const chk = checkArbLegs(r.buckets.map(b => [b.tid, b.ask]), r.mp, bs);
+    pureArb.push({ r, chk });
+  }
 
   // шанс-комбо: до 2 лучших шагов на город-дату, сортировка по вероятности выигрыша
   const comboSeen = new Map(), combos = [];
-  for (const c of results.flatMap(chanceCombos).sort((a,z) => z.pWin - a.pWin || z.pWin/z.cost - a.pWin/a.cost)){
+  for (const c of results.flatMap(r => (r.skip || !r.mp) ? [] : chanceCombos(r, r.mp)).sort((a,z) => z.pWin - a.pWin || z.pWin/z.cost - a.pWin/a.cost)){
     const k = c.r.city.slug + "|" + c.r.dateStr;
     const n = comboSeen.get(k) || 0;
     if (n >= 2) continue;
@@ -741,25 +1407,81 @@ async function scan(){
   }
   // «серийная ставка дня»: строгие критерии повторяемости (P>=60%, EV>=+20%, тир A/B, узкий диапазон, объём)
   const isSeries = c => c.pWin >= 0.60 && (c.pWin/c.cost - 1) >= 0.20 && (c.pHi - c.pLo) <= 0.25
-    && (c.r.cal.tier === "A" || c.r.cal.tier === "B") && (c.r.volume || 0) >= 15000;
+    && (c.r.tier === "A" || c.r.tier === "B") && (c.r.volume || 0) >= 15000;
   const sBest = [...combos].filter(isSeries).sort((a,z) => z.pWin*(z.pWin/z.cost-1) - a.pWin*(a.pWin/a.cost-1))[0] || null;
 
   let html = "";
-  for (const r of pureArb){
-    html += `<div class="limit-warn"><b>Чистый арбитраж: ${esc(r.city.name)} (${fmtDateRu(r.dateStr)})</b> — сумма цен всех бакетов ${fmtC(r.sumAsk)}: покупка YES на ВСЕ исходы даёт гарантированные +${fmtC(1-r.sumAsk)} с каждого $1-комплекта при любой погоде. Проверь глубину стакана на каждом бакете — тонкие книги. <a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть →</a></div>`;
+  for (const { r, chk } of pureArb){
+    // Сумма асков ниже $1 сама по себе НЕ арбитраж: без комиссий и без объёма в
+    // книгах это картинка. Показываем только то, что реально исполняется.
+    if (chk.ok){
+      html += `<div class="limit-warn"><b>Исполнимая связка: ${esc(r.city.name)} (${fmtDateRu(r.dateStr)})</b> — полная цена комплекта с комиссиями ${fmtC(chk.exec_cost)}; по верхним уровням книг набирается ${chk.exec_sets} комплект(ов), это ${money(chk.exec_profit)} до проскальзывания. Цены живые: если книга ушла — связки нет. <a class="mlink" href="${r.link}" target="_blank" rel="noopener">Открыть →</a></div>`;
+    } else {
+      html += `<div class="watch-item">Сумма асков ${fmtC(r.sumAsk)} (с комиссиями ${fmtC(r.sumAllin)}) у ${esc(r.city.name)} (${fmtDateRu(r.dateStr)}) — <b>не арбитраж</b>: ${esc(chk.why || "не исполняется")}.</div>`;
+    }
   }
   // ВЕРДИКТ ДНЯ: арбитраж (баннеры выше) > серия > одиночная 5/5 > честный пропуск
-  const vTop = picks[0] || null;
-  const vConf = vTop ? Math.min(vTop.yes ? vTop.yes.conf : 5, vTop.no ? vTop.no.conf : 5) : 0;
+  // Compute vConf from ALL picks, not just first one
+  let vConf = 0;
+  for (const pick of picks){
+    const yesConf = pick.yes ? pick.yes.conf : 0;
+    const noConf = pick.no ? pick.no.conf : 0;
+    vConf = Math.max(vConf, yesConf, noConf);
+  }
   const modeName = MODE === "min" ? "минимумы" : "максимумы";
+  // One in-scan allocator: per-resolution-date cap inside the overall run limit.
+  const runBudget = createRunBudget(limit, WEATHER_DAY_CAP);
+  
+  let sExec = null, sWhy = null, sStake = 0;
   if (sBest){
-    const st = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, limit) || 1;
-    const nSets = st/sBest.cost;
-    const vLegs = sBest.buckets.map(b => { const sh = Math.max(nSets, 1/b.ask); return `${esc(b.title)} ≤${fmtC(b.ask)} × ${sh.toFixed(1)} акц ($${(sh*allin(b.ask)).toFixed(2)} с комиссией)`; }).join(" · ");
-    const vUsd = sBest.buckets.reduce((s,b) => s + Math.max(nSets, 1/b.ask)*allin(b.ask), 0);
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${st.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» — цель ${nSets.toFixed(1)} акц/нога, но минимум биржи $1 на ордер поднимает дешёвые ноги <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера: ${vLegs} — итого $${vUsd.toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · при попадании +$${(st*(1/sBest.cost-1)).toFixed(2)}, мимо −$${st.toFixed(2)} · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll} по осторожной вероятности. Покупать ЛИМИТ-ордерами: цена = текущий аск (потолок +1¢). Минимум биржи — $1 на ордер, поэтому в дешёвых бакетах акций больше (суммы по ногам выровнены до $1). Лимит по аску исполняется сразу, но защищает от проскальзывания.</div></div>`;
-  } else if (vConf >= 5){
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
+    const sBestDate = sBest.r.dateStr;
+    const dateCap = runBudget.remaining(sBestDate);
+    sStake = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, Math.min(limit, dateCap)) || 1;
+    const bs = await fetchBooks(sBest.tids);
+    sExec = comboLots(Object.assign({}, sBest, { stake: sStake }), sBest.mp, dateCap, bs);
+    const [okExec, why] = approveCombo(sExec, dateCap);
+    if (!okExec){ sWhy = why; sExec = null; }
+    else if (!runBudget.reserve(sBestDate, sExec.total_usd)){
+      sWhy = "исполнимая серия не помещается в общий остаток бюджета";
+      sExec = null;
+    }
+  }
+  if (sExec){
+    // Series is already reserved: the following single sees both reduced pots.
+    const sBestDate = sBest.r.dateStr;
+    const vLegs = sExec.lots.map(l => `${esc(l.bucket)} ≤${fmtC(l.limit)} × ${l.shares.toFixed(1)} акц ($${l.usd.toFixed(2)} с комиссией)`).join(" · ");
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(runBudget.remaining(sBestDate) + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
+  }
+  if (sBest && sWhy){
+    // Series rejected: announce but allow fallthrough to singles
+    html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
+  }
+  // Try every 5/5 side until the first executable one; the helper reserves it.
+  const candidates = singleCandidates(picks);
+  const hasDateBudget = candidates.some(c => runBudget.remaining(c.r.dateStr) > 0);
+  if (vConf >= 5 && hasDateBudget){
+    const selected = await findExecutableSingle(candidates, runBudget, async (candidate, dateCap) => {
+      const r = candidate.r;
+      if (!r.mp) return { ok: false, reason: `${r.city.name} ${candidate.side}: нет mp` };
+      if (!candidate.token_id) return { ok: false, reason: `${r.city.name} ${candidate.side}: нет token_id` };
+      const vStake = kellyStake(candidate.pBase, candidate.pCons, candidate.cost,
+                                bankroll, Math.min(limit, dateCap)) || 1;
+      const vBook = await fetchBookLevels(candidate.token_id);
+      if (!vBook) return { ok: false, reason: `${r.city.name} ${candidate.side}: книга недоступна` };
+      return singleLot({ token_id: candidate.token_id, ask: candidate.ask, stake: vStake },
+                       r.mp, dateCap, vBook, candidate.pCons);
+    });
+    const singleExec = selected.exec;
+    const bestPick = selected.candidate
+      ? { ...selected.candidate.vSide, r: selected.candidate.r, side: selected.candidate.side }
+      : null;
+    const picksChecked = selected.checked.map(x => x.reason);
+    if (singleExec && bestPick){
+      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — ${esc(bestPick.r.city.name)} (${fmtDateRu(bestPick.r.dateStr)}), ${bestPick.side} на бакет «${esc(bestPick.b.title)}», ${singleExec.shares.toFixed(1)} акций по ≤${fmtC(singleExec.limit)} за $${singleExec.usd.toFixed(2)} — первая карточка ниже.</div>`;
+    } else {
+      const reasonList = picksChecked.slice(0,3).join("; ");
+      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Проверено кандидатов: ${picksChecked.length}. Первые отказы: ${esc(reasonList)}.</div>`;
+    }
   } else {
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Это нормальный результат: ставим только при подтверждённом перевесе.</div>`;
   }
@@ -779,13 +1501,13 @@ async function scan(){
         const win = st*(1/c.cost - 1), evd = st*(c.pWin/c.cost - 1);
         // Polymarket: минимум $1 на ордер. Считаем акции по ноге: max(целевые, минимум на $1)
         const tgt = st/c.cost;
-        const legs = c.buckets.map(b => { const sh = Math.max(tgt, 1/b.ask); return { b, sh, usd: sh*b.ask }; });
+        const legs = c.buckets.map(b => { const sh = Math.max(tgt, c.mp.min_notional/allin(b.ask, c.mp)); return { b, sh, usd: sh*allin(b.ask, c.mp) }; });
         const realUsd = legs.reduce((s,l) => s + l.usd, 0);
         const legTxt = legs.map(l => `${esc(l.b.title)} ≤${fmtC(l.b.ask)} × ${l.sh.toFixed(1)} акц ($${l.usd.toFixed(2)})`).join(" · ");
-        const wide = (c.pHi - c.pLo) > 0.25 || c.r.cal.tier === "C";
+        const wide = (c.pHi - c.pLo) > 0.25 || c.r.tier === "C";
         const ser = c === sBest
           ? `<div style="margin:2px 0 4px"><span class="chip" style="border-color:var(--good);color:var(--good-text);font-weight:600">★ СЕРИЯ — ставка дня</span> <span style="font-size:12.5px;color:var(--ink-2)">10 повторов по $${st.toFixed(2)}: ~${Math.round(10*c.pWin)} попаданий, ожидание +$${(10*st*(c.pWin/c.cost-1)).toFixed(0)}</span></div>` : "";
-        return `<div class="watch-item">${ser}${esc(c.r.city.name)} (${fmtDateRu(c.r.dateStr)})${c.r.mode === "min" ? " · МИНИМУМ" : ""} · бакеты: «${c.buckets.map(b => esc(b.title)).join("» + «")}» · цена ${fmtC(c.cost)} за $1 выплаты · P(выигрыша) <b>${fmtP(c.pWin)}</b> (перепроверка: ${fmtP(c.pLo)}–${fmtP(c.pHi)}) · ${st ? `<b>размер $${realUsd.toFixed(2)}</b> · попадание +$${win.toFixed(2)} · EV ${money(evd)}<div style="margin-top:4px;font-size:12.5px">ЛИМИТ-ордера: ${legTxt}${realUsd > 1.4*st ? ` <span class="chip s">⚠ минимум биржи $1 на ордер поднял сумму с $${st.toFixed(2)} до $${realUsd.toFixed(2)} — проверь стакан, тонкие ноги лучше пропустить</span>` : ""}</div>` : "<b>размер $0 — не ставить: осторожная оценка не даёт преимущества</b>"} · калибровка ${c.r.cal.tier}${wide ? ' · <span class="chip s">⚠ оценка неустойчива — минимальный размер</span>' : ""} · <a class="mlink" href="${c.r.link}" target="_blank" rel="noopener">рынок →</a></div>`;
+        return `<div class="watch-item">${ser}${esc(c.r.city.name)} (${fmtDateRu(c.r.dateStr)})${c.r.mode === "min" ? " · МИНИМУМ" : ""} · бакеты: «${c.buckets.map(b => esc(b.title)).join("» + «")}» · цена ${fmtC(c.cost)} за $1 выплаты · P(выигрыша) <b>${fmtP(c.pWin)}</b> (перепроверка: ${fmtP(c.pLo)}–${fmtP(c.pHi)}) · ${st ? `<b>размер $${realUsd.toFixed(2)}</b> · попадание +$${win.toFixed(2)} · EV ${money(evd)}<div style="margin-top:4px;font-size:12.5px">ЛИМИТ-ордера: ${legTxt}${realUsd > 1.4*st ? ` <span class="chip s">⚠ минимальный ордер рынка поднял сумму с $${st.toFixed(2)} до $${realUsd.toFixed(2)} — проверь стакан, тонкие ноги лучше пропустить</span>` : ""}</div>` : "<b>размер $0 — не ставить: осторожная оценка не даёт преимущества</b>"} · калибровка ${c.r.tier}${wide ? ' · <span class="chip s">⚠ оценка неустойчива — минимальный размер</span>' : ""} · <a class="mlink" href="${c.r.link}" target="_blank" rel="noopener">рынок →</a></div>`;
       }).join("") + `</details>`;
   }
   if (rest.length) html += `<details><summary>Ещё подтверждённые, не вошли в топ (${rest.length})</summary>` +
@@ -796,7 +1518,7 @@ async function scan(){
   if (blocked.length) html += `<details><summary>Заблокировано: ненадёжная калибровка станции (${blocked.length})</summary>` +
     blocked.map(t => `<div class="skip-item">${esc(t.r.city.name)} (${fmtDateRu(t.r.dateStr)}) · ${t.side} «${esc(t.b.title)}» — тир C: поправка станции нестабильна, сигналу нельзя доверять без перекалибровки</div>`).join("") + `</details>`;
   if (ineff.length) html += `<details><summary>Индекс неэффективности книг — где искать edge (топ-7)</summary>` +
-    ineff.slice(0,7).map(r => `<div class="watch-item">${esc(r.city.name)} (${fmtDateRu(r.dateStr)}) · сумма ask ${fmtC(r.sumAsk)}${r.sumAsk < 0.99 ? " — ЧИСТЫЙ АРБ" : r.sumAsk < 1.03 ? " — сырой рынок" : ""} · объём $${Math.round(r.volume).toLocaleString("en-US")}</div>`).join("") + `</details>`;
+    ineff.slice(0,7).map(r => `<div class="watch-item">${esc(r.city.name)} (${fmtDateRu(r.dateStr)}) · сумма ask ${fmtC(r.sumAsk)} (с комиссиями ${fmtC(r.sumAllin)})${r.sumAllin < 0.995 ? " — кандидат в связку, проверяется по книгам" : r.sumAsk < 1.03 ? " — сырой рынок" : ""} · объём $${Math.round(r.volume).toLocaleString("en-US")}</div>`).join("") + `</details>`;
   if (skipped.length) html += `<details><summary>Пропущено (${skipped.length})</summary>` +
     skipped.map(r => `<div class="skip-item">${esc(r.city.name)} (${fmtDateRu(r.dateStr)}): ${esc(r.skip)}</div>`).join("") + `</details>`;
   res.innerHTML = html;
@@ -831,23 +1553,33 @@ function init(){
       const j = JSON.parse($("calibInput").value);
       if (!j.cities) throw new Error("нет поля cities");
       let applied = 0;
-      const toFams = u => {   // v2: {fams:{"1":{ec:{bias,std,se},...}}} -> {ec:{b,s,se},...}; v1 -> одна поправка всем
-        const f1 = u.fams && (u.fams["1"] || u.fams[1]);
-        if (f1 && Object.keys(f1).length){
+      // Калибровка КАЖДОГО горизонта отдельно: fams — лид 1, fams2 — лид 2, tiers — тир
+      // на свой лид. Суточная калибровка не даёт права торговать двухсуточный прогноз,
+      // поэтому лид без данных остаётся тиром C (стоп), а не наследует чужой.
+      const toFams = (u, lead) => {   // {fams:{"1":{ec:{bias,std,se,spread2}}}} -> {ec:{b,s,se,spread2}}
+        const fl = u.fams && (u.fams[String(lead)] || u.fams[lead]);
+        if (fl && Object.keys(fl).length){
           const out = {};
-          for (const f in f1) out[f] = { b:+f1[f].bias, s:+f1[f].std, se:+(f1[f].se ?? (f1[f].std/Math.sqrt(f1[f].n||4))) };
+          for (const f in fl) out[f] = { b:+fl[f].bias, s:+fl[f].std,
+            se:+(fl[f].se ?? (fl[f].std/Math.sqrt(fl[f].n||4))),
+            spread2: (fl[f].spread2 === undefined || fl[f].spread2 === null) ? null : +fl[f].spread2 };
           return out;
         }
-        if (u.bias != null && u.std != null){
-          const one = { b:+u.bias, s:+u.std, se:+(u.std/Math.sqrt(u.n||4)) };
+        if (lead === 1 && u.bias != null && u.std != null){   // старый формат: одна поправка всем
+          const one = { b:+u.bias, s:+u.std, se:+(u.std/Math.sqrt(u.n||4)), spread2: null };
           return { ec:one, gf:one, ic:one, gm:one };
         }
         return null;
       };
+      const toTiers = u => {
+        const t = u.tiers || {};
+        return { "1": t["1"] || t[1] || u.tier || "C", "2": t["2"] || t[2] || "C" };
+      };
       for (const c of CITIES){
         const u = j.cities[c.slug];
         if (!u) continue;
-        c.fams = toFams(u); c.tier = u.tier || "C";
+        c.fams = toFams(u, 1); c.fams2 = toFams(u, 2);
+        c.tiers = toTiers(u); c.tier = c.tiers["1"];
         $("city_"+c.slug).checked = c.tier !== "C";
         applied++;
       }
@@ -858,7 +1590,8 @@ function init(){
         for (const slug in j.cities_min){
           if (MIN_CAL[slug] !== undefined || CITIES.some(c => c.slug === slug)){
             const u = j.cities_min[slug];
-            MIN_CAL[slug] = { tier: u.tier || "C", fams: toFams(u) }; appliedMin++;
+            MIN_CAL[slug] = { tier: (u.tiers && (u.tiers["1"] || u.tiers[1])) || u.tier || "C",
+                              tiers: toTiers(u), fams: toFams(u, 1), fams2: toFams(u, 2) }; appliedMin++;
           }
         }
       }

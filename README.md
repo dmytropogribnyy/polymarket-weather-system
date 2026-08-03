@@ -25,7 +25,15 @@ web/crypto_screener.html    BTC/ETH above-$K vs Deribit options surface
 docs/METHODOLOGY.md    how probabilities and stake sizes are actually computed
 docs/OPEN_QUESTIONS.md the places where I am not sure I'm right (start here)
 docs/JOURNAL.md        real bets and outcomes
-docs/tasks/            prompts of the two scheduled jobs that run the system
+docs/REVIEW_RESPONSE.md what the external reviews asked for, and what was done
+docs/tasks/            prompts of the scheduled jobs (copies for reading; the
+                       jobs themselves live outside this repository)
+
+tests/                 deterministic test suite, no network: every external API
+                       is injected as a fake `fetch`
+tests/parity/          the JS↔Python parity harness (extracts the PARITY-CORE
+                       block straight out of web/weather_screener.html)
+.github/workflows/     CI: syntax checks + the whole suite on every push and PR
 ```
 
 The HTML files are fully self-contained: download, open in a browser, press
@@ -37,12 +45,13 @@ comments are Russian too; the code itself is short and readable regardless.
 
 ## How it works in one minute
 
-1. **Resolution station.** Every Polymarket weather market names its
-   resolution station in the description. Stations are verified manually
-   when a city is added (hardcoded in `ST`), and at runtime every market
-   passes a fail-closed check: resolution source (Wunderground/NOAA/NWS)
-   and units must match the model, otherwise the market is skipped and
-   reported. The station-vs-downtown gap is half the edge.
+1. **Resolution contract.** Every Polymarket weather market names its
+   resolution rules in the description. At runtime the rules are parsed and
+   validated fail-closed: source (Wunderground/NOAA/NWS), station (compared
+   with the configured station of that city) and units must all be present,
+   unambiguous and matching, and the rules must not have changed since the
+   market was last seen. Anything else is NO BET, reported in `res_checks`.
+   The station-vs-downtown gap is half the edge.
 2. **Calibration v2 (lead-matched, per model family).** The forecast *as it
    stood 24h and 48h before the day* (Open-Meteo Previous Runs API,
    `previous_day1/2`) vs actual METAR maxima, separately for each of the four
@@ -51,24 +60,37 @@ comments are Russian too; the code itself is short and readable regardless.
    worst family (tier C is not tradable).
 3. **Probability v2.** A 143-member super-ensemble (ECMWF + GFS + ICON + GEM):
    equal weight per family, each member shifted by its own family's bias,
-   smoothed with a kernel τ² = max(0.36, std² − ensemble-spread²) — residual
-   uncertainty only, no double counting. Then shrunk toward market prices via
-   a normalized log-pool p^λ·q^(1−λ) with λ = 0.25 (model weight) during the
-   validation phase; both the raw and the shrunk probability are logged.
+   smoothed with a kernel τ² = max(0.36, std² − *historical* ensemble spread of
+   the calibration window) — residual uncertainty only, and deliberately not
+   today's spread, which would shrink the kernel exactly when the ensemble
+   disagrees. Then shrunk toward market prices via a normalized log-pool
+   p^λ·q^(1−λ) with λ = 0.25, computed **only over the complete mutually
+   exclusive set of outcomes**: a missing or unrecognized bucket fails closed
+   instead of renormalizing a partial subset to 1.
 4. **Robustness.** Everything is recomputed with each family's bias shifted by
    ± its standard error (std/√n — the uncertainty of the mean, not the daily
    spread). A signal counts only if the edge survives both stress runs.
-5. **Fees.** Polymarket charges a taker fee of 0.05·price·(1−price) per share
-   on weather markets (verified against real fills to the 4th decimal). All
-   economics — filters, EV, Kelly, combos, both arbitrage detectors — use
-   all-in prices. Legs cheaper than 3¢ are banned during validation.
+5. **Market-specific trading parameters.** Taker fee rate, tick size and
+   minimum order are read from the concrete market (Gamma fields, falling back
+   to CLOB by `conditionId`) — weather, earthquakes and crypto no longer share
+   a hard-coded fee constant. Missing or insane values mean NO BET. All
+   economics — filters, EV, Kelly, combos, arbitrage — use the resulting
+   all-in price. Legs cheaper than 3¢ are banned during validation.
 6. **Sizing & budget.** Quarter-Kelly on a conservative probability, capped by
-   order-book depth and by a code-enforced budget: $5/day across all weather
-   entries, $15/day total, computed from actual purchases on the wallet.
-7. **Execution.** A book-walk computes executable lots per leg (fees included),
-   honoring the $1 minimum order and rejecting thin-book legs; the combo's EV
-   is recomputed after leg drops (`ev_final`) and rejected if it decays.
-8. **Portfolio feedback.** The daily job reads open positions via the public
+   order-book depth and by one code-enforced allocator: $5 per **resolution
+   (weather) date** shared by max, min and series recommendations alike —
+   already executed positions of that date included — inside a $15/day total.
+7. **Execution.** A decimal book-walk computes executable lots per leg (fees
+   included), honoring the market's minimum order and rejecting thin-book legs.
+   A combo is approved only after the lots exist: at least two surviving legs,
+   fee-inclusive `ev_final` ≥ 0.10, and `total_usd` within the remaining
+   budget. Every candidate is either approved or explicitly rejected with a
+   reason — there is no "check only the first six" shortcut.
+8. **Arbitrage, honestly.** "The asks sum to less than $1" is not arbitrage and
+   is no longer presented as one anywhere: a set counts only when the all-in
+   prices sum below $1 *and* the books hold enough volume for the minimum order
+   on every leg.
+9. **Portfolio feedback.** The daily job reads open positions via the public
    data API (read-only, wallet address only), computes the per-outcome payoff
    table for every open event, tracks today's spend against the daily limit,
    flags recommendations that conflict with held positions, and reminds about
@@ -76,12 +98,36 @@ comments are Russian too; the code itself is short and readable regardless.
 
 Details, formulas and thresholds: `docs/METHODOLOGY.md`.
 
+## Tests
+
+```
+python3 -m unittest discover -s tests -t .   # everything, no network
+node tests/parity/parity_test.js             # the JS core, standalone
+node tests/parity/check_syntax.js            # the HTML screeners must parse
+```
+
+The suite is deterministic and offline by construction: production code takes a
+`fetch` callable, tests inject a fake that raises on any URL it was not told
+about, so a test that accidentally reaches the network fails instead of
+flaking. The parity test pulls the calculation core out of
+`web/weather_screener.html` and compares it with `src/wx_daily.py` number by
+number — if the page and the nightly job drift apart, CI goes red.
+
 ## Current state
 
 The system went through an external review on 2026-08-02 which found a real
 calibration-horizon error and undeclared taker fees; the review's NO-GO was
-accepted and the probability layer was rebuilt the same day. See
-`docs/REVIEW_RESPONSE.md` for the point-by-point verification and changes.
+accepted and the probability layer was rebuilt the same day. A second pass
+closed the remaining safety blockers: one aggregate budget per resolution date,
+executable-lot sizing in decimal arithmetic, verdicts gated on executable
+economics, a fail-closed resolution contract, per-market trading parameters,
+web/Python parity, and the model-safety invariants. See
+`docs/REVIEW_RESPONSE.md` for the point-by-point status, including what was
+deliberately **not** done.
+
+Note on the scheduled jobs: they live outside this repository and are not
+updated by any change here. Until the job is pointed at the current code, none
+of the protections above are in effect for the nightly run.
 
 Bankroll ~$100, validation phase: $5/day weather cap inside a $15/day total,
 probabilities shrunk toward the market (λ=0.25), skip-days are the norm.
