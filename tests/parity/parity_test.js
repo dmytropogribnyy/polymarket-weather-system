@@ -192,4 +192,20 @@ out.verdict = cases.verdict.map(c => {
            ev_final: ex && ex.ok ? r(ex.ev_final, 4) : null };
 });
 
+out.single_lot = cases.single_lot.map(c => {
+  const mp = mpOf(c.mp);
+  const book = c.book;
+  const pick = c.pick;
+  const result = C.singleLot(pick, mp, c.budget_left, book, c.probability || null, null);
+  return {
+    name: c.name,
+    ok: result.ok,
+    shares: result.ok ? r(result.shares, 1) : null,
+    usd: result.ok ? r(result.usd, 2) : null,
+    limit: result.ok ? r(result.limit, 2) : null,
+    ev_final: result.ok && result.ev_final != null ? r(result.ev_final, 4) : null,
+    reason: result.ok ? null : result.reason
+  };
+});
+
 process.stdout.write(JSON.stringify(out, null, 1));

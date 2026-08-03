@@ -527,13 +527,15 @@ def chance_combos(rows, mp, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
 
 COMBO_MIN_EV = 0.10   # порог EV после расчёта исполнимых лотов (с комиссиями)
 COMBO_MIN_LEGS = 2    # комбо из одной ноги — не комбо
+SINGLE_MIN_EV = 0.10  # порог EV для одиночной ставки ПОСЛЕ расчёта исполнимых лотов
 
-def _walk_book(levels, mp, target_shares, usd_cap):
+def _walk_book(levels, mp, target_shares, usd_cap, price_limit=None):
     """Обход книги в Decimal: набираем до target_shares акций, но не меньше
     минимального нотионала и минимального числа акций рынка, и не дороже usd_cap.
     Возврат (shares, usd, limit_price) или None, если минимум не набирается.
     Деньги считаются десятичными дробями: нога ровно на $1.00 обязана пройти —
-    двоичная 0.9999999999999999 не должна её отбраковывать."""
+    двоичная 0.9999999999999999 не должна её отбраковывать.
+    price_limit: if set, stop walking when price > price_limit (hard execution ceiling)."""
     # Округлённый минимум для практических расчётов в цикле
     min_notional_rounded = _cents(mp.min_notional)
     # Точный минимум для финальной проверки
@@ -546,6 +548,8 @@ def _walk_book(levels, mp, target_shares, usd_cap):
     for price, size in levels:
         p = Decimal(str(price)); size = Decimal(str(size))
         if p <= 0 or size <= 0: continue
+        # Stop walk if price exceeds limit
+        if price_limit is not None and p > Decimal(str(price_limit)) + EPS_MONEY: break
         a = p + Decimal(str(mp.fee_rate))*p*(1-p)     # полная цена акции
         if a <= 0: continue
         take = max(want_sh - sh, Decimal("0"))
@@ -627,7 +631,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
             else:
                 # Все цены валидны, используем бо́льшее из CLOB min_shares
                 leg_min_shares = max(mp.min_shares, book_min_shares)
-                got = _walk_book(levels, mp._replace(min_shares=leg_min_shares), leg_min_shares, cap)
+                got = _walk_book(levels, mp._replace(min_shares=leg_min_shares), leg_min_shares, cap, price_limit=None)
                 if got is None:
                     skipped.append(dict(bucket=b, why=f"в книге нет объёма даже на минимальный ордер ${mp.min_notional:g} / {leg_min_shares} акций"))
                     continue
@@ -659,7 +663,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         rest_min = sum((x["min_usd"] for x in legs[i+1:]), Decimal("0"))
         allow = cap - running - rest_min
         leg_mp = mp._replace(min_shares=l["book_min_shares"])
-        got = _walk_book(l["levels"], leg_mp, target, allow)
+        got = _walk_book(l["levels"], leg_mp, target, allow, price_limit=None)
         if got is None:                                  # минимум уже проверен выше
             sh, usd, lim = l["min_shares"], l["min_usd"], l["limit"]
         else:
@@ -816,10 +820,11 @@ def check_arb_legs(legs, mp, fetch=None):
             return dict(res, ok=False, why=f"объём {sets} акций < минимум книги {leg['book_min_shares']:g} акций на одной из ног")
     return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
-def single_lot(pick, mp, budget_left, fetch=None):
+def single_lot(pick, mp, budget_left, fetch=None, probability=None):
     """Исполнимый лот для одиночной рекомендации. Проверяет реальную книгу,
     минимальное число акций, минимальный нотионал и fee-inclusive economics.
-    Возвращает dict(ok, shares, usd, reason)."""
+    Возвращает dict(ok, shares, usd, limit, ev_final, reason).
+    probability: optional model probability for EV calculation."""
     fetch = fetch or get
     token_id = pick.get("token_id")
     ask = pick.get("ask")
@@ -854,13 +859,15 @@ def single_lot(pick, mp, budget_left, fetch=None):
         return dict(ok=False, shares=0.0, usd=0.0,
                    reason=f"книга недоступна: {str(e)[:40]}")
     
+    # Use ask as the execution price limit - never consume worse levels
+    execution_limit = ask
     # Используем бо́льшее из двух минимумов акций
     leg_min_shares = max(mp.min_shares, book_min_shares)
     cap = _cents(min(pick.get("stake", 0), budget_left), rounding=ROUND_DOWN)
     
     # Пытаемся набрать минимальный исполнимый лот
     leg_mp = mp._replace(min_shares=leg_min_shares)
-    got = _walk_book(levels, leg_mp, leg_min_shares, cap)
+    got = _walk_book(levels, leg_mp, leg_min_shares, cap, price_limit=execution_limit)
     if got is None:
         return dict(ok=False, shares=0.0, usd=0.0,
                    reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares} акций")
@@ -888,9 +895,18 @@ def single_lot(pick, mp, budget_left, fetch=None):
         return dict(ok=False, shares=0.0, usd=0.0,
                    reason=f"после округления акций стоимость ${float(_cents(usd_from_rounded)):.2f} превышает лимит ${float(cap):.2f}")
     
+    # Compute fee-inclusive EV if probability provided
+    ev_final = None
+    if probability is not None:
+        # EV = (probability - full_price) / full_price
+        ev_final = float((Decimal(str(probability)) - full_price) / full_price)
+        if ev_final < SINGLE_MIN_EV - 1e-9:
+            return dict(ok=False, shares=0.0, usd=0.0, ev_final=ev_final,
+                       reason=f"EV после исполнения {ev_final*100:.1f}% < порог {SINGLE_MIN_EV*100:.0f}%")
+    
     # Return conservative ceiling: ROUND_UP ensures reservation covers executable cost
     return dict(ok=True, shares=float(sh_rounded), usd=float(_cents(usd_from_rounded, rounding=ROUND_UP)), limit=lim,
-              reason=None)
+              ev_final=ev_final, reason=None)
 
 
 def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):

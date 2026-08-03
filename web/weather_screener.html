@@ -490,7 +490,7 @@ const round1 = x => Math.round(x*10)/10;
    ордера рынка и не дороже потолка. Деньги считаются с допуском EPS_M: нога
    ровно на $1.00 обязана пройти, двоичная 0.9999999999999999 не должна её
    отбраковывать. */
-function walkBook(levels, mp, targetShares, usdCap){
+function walkBook(levels, mp, targetShares, usdCap, priceLimit){
   const minOrder = mp.min_notional;
   const cap = centsDown(usdCap);
   if (cap + EPS_M < minOrder) return null;
@@ -499,6 +499,8 @@ function walkBook(levels, mp, targetShares, usdCap){
   for (const lv of levels){
     const price = +lv[0], size = +lv[1];
     if (!(price > 0) || !(size > 0)) continue;
+    // Stop walk if price exceeds limit
+    if (priceLimit != null && price > priceLimit + EPS_M) break;
     const a = allin(price, mp);
     if (!(a > 0)) continue;
     let take = Math.max(wantSh - sh, 0);
@@ -581,7 +583,7 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
       }
     }
     if (tickMismatch) continue;
-    const got = walkBook(sorted, leg_mp, leg_mp.min_shares || 0, cap);
+    const got = walkBook(sorted, leg_mp, leg_mp.min_shares || 0, cap, null);
     if (!got){ skipped.push({ bucket: b, why: `в книге нет объёма даже на минимальный ордер $${leg_mp.min_notional}` }); continue; }
     const eff = got.usd/got.sh;
     if (eff > thinMult*allin(ask, leg_mp)){
@@ -602,7 +604,7 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     const l = legs[i];
     const restMin = legs.slice(i+1).reduce((s,x) => s + x.min_usd, 0);
     const leg_mp_use = l.leg_mp || mp;
-    const got = walkBook(l.levels, leg_mp_use, target, cap - running - restMin) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
+    const got = walkBook(l.levels, leg_mp_use, target, cap - running - restMin, null) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
     running += got.usd;
     lots.push({ bucket: l.bucket, ask: l.ask, limit: got.lim === null ? null : Math.round(got.lim*1000)/1000,
                 shares_raw: got.sh, usd_raw: got.usd, p: l.p });
@@ -784,14 +786,13 @@ function singleLot(pick, mp, budgetLeft, book, probability, priceCeiling){
     if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
       return { ok: false, shares: 0, usd: 0, reason: `книга: цена ${price} не кратна tick=${book.tick_size}` };
   }
-  // Check price ceiling if provided
-  if (priceCeiling != null && ask > priceCeiling + EPS_M)
-    return { ok: false, shares: 0, usd: 0, reason: `цена ${ask.toFixed(4)} превышает потолок ${priceCeiling.toFixed(4)}` };
+  // Use ask as the execution price limit - never consume worse levels
+  const executionLimit = ask;
   const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
   const leg_mp = Object.assign({}, mp, { min_shares: leg_min_shares });
   const stake = +pick.stake || 0;
   const cap = centsDown(Math.min(stake, +budgetLeft || 0));
-  const got = walkBook(levels, leg_mp, leg_min_shares, cap);
+  const got = walkBook(levels, leg_mp, leg_min_shares, cap, executionLimit);
   if (!got)
     return { ok: false, shares: 0, usd: 0, 
              reason: `в книге нет объёма на минимум $${leg_mp.min_notional} / ${leg_min_shares} акций` };

@@ -1626,5 +1626,187 @@
       "step": null,
       "books": {}
     }
+  ],
+  "single_lot": [
+    {
+      "name": "10¢→40¢ slippage: walkBook stops at ask=0.10, never reaches 0.40",
+      "pick": {
+        "token_id": "tok1",
+        "ask": 0.10,
+        "stake": 5
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 5,
+      "book": {
+        "levels": [[0.10, 1], [0.40, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": true,
+        "shares": 9.5,
+        "usd": 1.00,
+        "limit": 0.10
+      }
+    },
+    {
+      "name": "normalization: 3.2 shares × $0.3105 = $0.9936 < $1 minimum → reject",
+      "pick": {
+        "token_id": "tok2",
+        "ask": 0.30,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 1
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.30, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.52,
+      "expected": {
+        "ok": false,
+        "reason_contains": "raw debit"
+      }
+    },
+    {
+      "name": "valid deep book: normal execution",
+      "pick": {
+        "token_id": "tok3",
+        "ask": 0.25,
+        "stake": 3
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 3,
+      "book": {
+        "levels": [[0.25, 50], [0.26, 50]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.40,
+      "expected": {
+        "ok": true,
+        "shares": 11.4,
+        "usd": 3.00,
+        "limit": 0.25
+      }
+    },
+    {
+      "name": "missing min_order_size metadata → reject",
+      "pick": {
+        "token_id": "tok4",
+        "ask": 0.30,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.30, 100]],
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "метаданных"
+      }
+    },
+    {
+      "name": "off-tick: ask=0.403 incompatible with tick=0.01 → reject",
+      "pick": {
+        "token_id": "tok5",
+        "ask": 0.403,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.403, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": false,
+        "reason_contains": "tick"
+      }
+    },
+    {
+      "name": "low EV: probability 0.52, ask 0.50 → EV=1.5% < 10% threshold → reject",
+      "pick": {
+        "token_id": "tok6",
+        "ask": 0.50,
+        "stake": 2
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 2,
+      "book": {
+        "levels": [[0.50, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.52,
+      "expected": {
+        "ok": false,
+        "reason_contains": "EV"
+      }
+    },
+    {
+      "name": "budget remainder: want $5 but budget_left=$1.20 → caps at $1.20",
+      "pick": {
+        "token_id": "tok7",
+        "ask": 0.30,
+        "stake": 5
+      },
+      "mp": {
+        "fee_rate": 0.05,
+        "tick": 0.01,
+        "min_order": 1,
+        "min_shares": 0
+      },
+      "budget_left": 1.20,
+      "book": {
+        "levels": [[0.30, 100]],
+        "min_order_size": 1,
+        "tick_size": 0.01
+      },
+      "probability": 0.50,
+      "expected": {
+        "ok": true,
+        "shares": 3.9,
+        "usd": 1.20,
+        "limit": 0.30
+      }
+    }
   ]
 }

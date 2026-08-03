@@ -140,6 +140,31 @@ def py_results(cases):
         out["verdict"].append(dict(name=c["name"], verdict="BET" if ok else "NO BET", why=why,
                                    total_usd=_r(ex["total_usd"], 2) if (ex and ex["ok"]) else None,
                                    ev_final=_r(ex["ev_final"], 4) if (ex and ex["ok"]) else None))
+    
+    out["single_lot"] = []
+    for c in cases["single_lot"]:
+        mp = _mp(c["mp"])
+        pick = c["pick"]
+        book = c["book"]
+        probability = c.get("probability")
+        # Convert book to fetch-compatible format
+        def single_fetch(url):
+            return dict(
+                asks=[dict(price=p, size=s) for p, s in book["levels"]],
+                min_order_size=str(book.get("min_order_size", 1)),
+                tick_size=str(book.get("tick_size", 0.01))
+            )
+        result = wx.single_lot(pick, mp, c["budget_left"], single_fetch, probability=probability)
+        out["single_lot"].append(dict(
+            name=c["name"],
+            ok=result["ok"],
+            shares=_r(result["shares"], 1) if result["ok"] else None,
+            usd=_r(result["usd"], 2) if result["ok"] else None,
+            limit=_r(result.get("limit"), 2) if result["ok"] else None,
+            ev_final=_r(result.get("ev_final"), 4) if result["ok"] and result.get("ev_final") is not None else None,
+            reason=result.get("reason") if not result["ok"] else None
+        ))
+    
     return out
 
 
@@ -260,6 +285,25 @@ class ParityTest(unittest.TestCase):
         # хотя бы один BET и хотя бы один NO BET — иначе кейсы ничего не проверяют
         kinds = {x["verdict"] for x in self.py["verdict"]}
         self.assertEqual(kinds, {"BET", "NO BET"})
+
+    def test_single_lot_parity(self):
+        """JS singleLot and Python single_lot must return identical results."""
+        for j, p in zip(self.js["single_lot"], self.py["single_lot"]):
+            self.assertEqual(j["name"], p["name"])
+            self.assertEqual(j["ok"], p["ok"], f"single_lot ok: {p['name']}")
+            if j["ok"]:
+                self._num_eq(j["shares"], p["shares"], 0.1, f"shares: {p['name']}")
+                self._num_eq(j["usd"], p["usd"], self.MONEY_TOL, f"usd: {p['name']}")
+                self._num_eq(j["limit"], p["limit"], 0.01, f"limit: {p['name']}")
+                self._num_eq(j["ev_final"], p["ev_final"], 1e-4, f"ev_final: {p['name']}")
+            else:
+                # Both must have a reason
+                self.assertIsNotNone(j["reason"], f"JS reason missing: {p['name']}")
+                self.assertIsNotNone(p["reason"], f"Python reason missing: {p['name']}")
+        # At least one ok=true and one ok=false
+        oks = {x["ok"] for x in self.py["single_lot"]}
+        self.assertEqual(oks, {True, False}, "single_lot cases must include both ok and reject")
+
 
 
 class WebClaimsTest(unittest.TestCase):
