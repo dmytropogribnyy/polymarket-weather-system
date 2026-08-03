@@ -84,14 +84,34 @@ out.kelly = cases.kelly.map(c => ({
 
 function execOf(step, mp, budgetLeft, books){
   if (!step) return null;
-  // Преобразуем книги из массивов в структуру с метаданными
+  // Преобразуем книги: если уже в новом формате (с levels), используем как есть;
+  // если старый формат (просто массив), добавляем дефолтные метаданные
   const booksWithMeta = {};
   for (const tid in books){
-    booksWithMeta[tid] = {
-      levels: books[tid],
-      min_order_size: 1,      // стандартное значение для тестовых книг
-      tick_size: 0.01
-    };
+    const book = books[tid];
+    // Проверяем: если book это массив, то старый формат; если объект с levels — новый
+    if (Array.isArray(book)) {
+      // Старый формат: book это просто массив уровней
+      booksWithMeta[tid] = {
+        levels: book,
+        min_order_size: 1,
+        tick_size: 0.01
+      };
+    } else if (book && typeof book === 'object' && book.levels) {
+      // Новый формат: уже есть levels, min_order_size, tick_size
+      booksWithMeta[tid] = {
+        levels: book.levels,
+        min_order_size: book.min_order_size !== undefined ? book.min_order_size : 1,
+        tick_size: book.tick_size !== undefined ? book.tick_size : 0.01
+      };
+    } else {
+      // Непонятный формат - используем дефолты
+      booksWithMeta[tid] = {
+        levels: [],
+        min_order_size: 1,
+        tick_size: 0.01
+      };
+    }
   }
   const ex = C.comboLots(step, mp, budgetLeft, booksWithMeta);
   return {
@@ -110,14 +130,33 @@ out.combo_lots = cases.combo_lots.map(c => ({
 }));
 
 out.arb = cases.arb.map(c => {
-  // Преобразуем книги из массивов в структуру с метаданными
+  // Преобразуем книги: если уже в новом формате (с levels), используем как есть;
+  // если старый формат (просто массив), добавляем дефолтные метаданные
   const booksWithMeta = {};
   for (const tid in c.books){
-    booksWithMeta[tid] = {
-      levels: c.books[tid],
-      min_order_size: 1,
-      tick_size: 0.01
-    };
+    const book = c.books[tid];
+    if (Array.isArray(book)) {
+      // Старый формат: book это просто массив уровней
+      booksWithMeta[tid] = {
+        levels: book,
+        min_order_size: 1,
+        tick_size: 0.01
+      };
+    } else if (book && typeof book === 'object' && book.levels) {
+      // Новый формат: уже есть levels, min_order_size, tick_size
+      booksWithMeta[tid] = {
+        levels: book.levels,
+        min_order_size: book.min_order_size !== undefined ? book.min_order_size : 1,
+        tick_size: book.tick_size !== undefined ? book.tick_size : 0.01
+      };
+    } else {
+      // Непонятный формат - используем дефолты
+      booksWithMeta[tid] = {
+        levels: [],
+        min_order_size: 1,
+        tick_size: 0.01
+      };
+    }
   }
   const res = C.checkArbLegs(c.legs.map(t => [t]), mpOf(c.mp), booksWithMeta);
   return { name: c.name, ok: res.ok, why: res.why === undefined ? null : res.why,
@@ -135,15 +174,34 @@ out.chance_combos = cases.chance_combos.map(c => {
 
 out.verdict = cases.verdict.map(c => {
   const mp = mpOf(c.mp);
-  // Преобразуем книги из массивов в структуру с метаданными
+  // Преобразуем книги: если уже в новом формате (с levels), используем как есть;
+  // если старый формат (просто массив), добавляем дефолтные метаданные
   const booksWithMeta = c.books ? {} : null;
   if (c.books){
     for (const tid in c.books){
-      booksWithMeta[tid] = {
-        levels: c.books[tid],
-        min_order_size: 1,
-        tick_size: 0.01
-      };
+      const book = c.books[tid];
+      if (Array.isArray(book)) {
+        // Старый формат: book это просто массив уровней
+        booksWithMeta[tid] = {
+          levels: book,
+          min_order_size: 1,
+          tick_size: 0.01
+        };
+      } else if (book && typeof book === 'object' && book.levels) {
+        // Новый формат: уже есть levels, min_order_size, tick_size
+        booksWithMeta[tid] = {
+          levels: book.levels,
+          min_order_size: book.min_order_size !== undefined ? book.min_order_size : 1,
+          tick_size: book.tick_size !== undefined ? book.tick_size : 0.01
+        };
+      } else {
+        // Непонятный формат - используем дефолты
+        booksWithMeta[tid] = {
+          levels: [],
+          min_order_size: 1,
+          tick_size: 0.01
+        };
+      }
     }
   }
   const ex = c.step ? C.comboLots(c.step, mp, c.budget_left, booksWithMeta) : null;

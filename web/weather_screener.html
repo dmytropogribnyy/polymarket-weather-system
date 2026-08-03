@@ -295,10 +295,10 @@ function parseMarketParams(m){
   if (!m || typeof m !== "object") return null;
   
   // Читаем канонический fee schedule (feesEnabled + feeSchedule), если есть
-  let fee_rate = null;
+  let fee_rate_canonical = null;
   if ("feesEnabled" in m) {
     if (m.feesEnabled === false) {
-      fee_rate = 0.0;  // явно отключённые комиссии — валидное состояние
+      fee_rate_canonical = 0.0;  // явно отключённые комиссии — валидное состояние
     } else if (m.feesEnabled === true) {
       const fs = m.feeSchedule;
       if (fs && typeof fs === "object") {
@@ -307,7 +307,7 @@ function parseMarketParams(m){
         const takerOnly = fs.takerOnly;
         // Поддерживаем только exponent=2 (квадратичная кривая rate*price*(1-price)) и takerOnly=true
         if (r !== null && (exp === null || exp === 2) && (takerOnly === undefined || takerOnly === true)) {
-          fee_rate = r;
+          fee_rate_canonical = r;
         } else {
           return null;  // неподдерживаемый schedule → NO BET
         }
@@ -317,9 +317,21 @@ function parseMarketParams(m){
     }
   }
   
-  // Если canonical отсутствует, пробуем legacy
-  if (fee_rate === null) {
-    fee_rate = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
+  // Читаем legacy fee rate
+  const fee_rate_legacy = feeRateOf(numOf(m, ["taker_base_fee","takerBaseFee","tbf","feeRateBps","fee_rate_bps"]));
+  
+  // Проверяем конфликт: если оба присутствуют, они должны совпадать
+  let fee_rate = null;
+  if (fee_rate_canonical !== null && fee_rate_legacy !== null) {
+    // Оба присутствуют: проверяем согласованность (допуск на округление)
+    if (Math.abs(fee_rate_canonical - fee_rate_legacy) > 0.0001) {
+      return null;  // конфликт canonical vs legacy → NO BET
+    }
+    fee_rate = fee_rate_canonical;
+  } else if (fee_rate_canonical !== null) {
+    fee_rate = fee_rate_canonical;
+  } else {
+    fee_rate = fee_rate_legacy;
   }
   
   const tick = numOf(m, ["minimum_tick_size","orderPriceMinTickSize","mts","tickSize"]);
@@ -491,7 +503,8 @@ function walkBook(levels, mp, targetShares, usdCap){
     sh += take; usd += a*take; lim = price;
     if (sh + EPS_M >= wantSh && usd + EPS_M >= minOrder) break;
   }
-  if (sh <= 0 || centsUp(usd) + EPS_M < minOrder) return null;
+  // Проверяем RAW usd против minOrder, не округлённое значение
+  if (sh <= 0 || usd + EPS_M < minOrder) return null;
   return { sh, usd, lim };
 }
 
@@ -527,8 +540,11 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
       skipped.push({ bucket: b, why: "некорректные метаданные книги" });
       continue;
     }
-    // Используем бо́льший минимум из mp и фактической книги
-    const leg_mp = Object.assign({}, mp, { min_notional: Math.max(mp.min_notional, book.min_order_size) });
+    // book.min_order_size — это минимум в акциях (shares), не USDC
+    // mp.min_notional — минимум в USDC, mp.min_shares — минимум в акциях
+    const leg_mp = Object.assign({}, mp, { 
+      min_shares: Math.max(mp.min_shares || 0, book.min_order_size)
+    });
     // Проверяем, что цена совместима с тиком
     if (Math.abs(Math.round(ask / book.tick_size) * book.tick_size - ask) > EPS_M){
       skipped.push({ bucket: b, why: `цена ${ask} несовместима с tick ${book.tick_size}` });
@@ -547,7 +563,8 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
   }
   if (legs.length < COMBO_MIN_LEGS) return fail(`исполнимых ног ${legs.length} < ${COMBO_MIN_LEGS}`, legs);
   const minTotal = legs.reduce((s,l) => s + l.min_usd, 0);
-  if (centsUp(minTotal) > cap + EPS_M)
+  // Сравниваем RAW minTotal с RAW cap, не округлённые значения
+  if (minTotal > cap + EPS_M)
     return fail(`минимальные лоты $${centsUp(minTotal).toFixed(2)} превышают доступное $${cap.toFixed(2)} `
                 + `(ставка $${stake.toFixed(2)}, остаток бюджета $${budgetLeft.toFixed(2)})`, legs);
   const lots = [];
@@ -595,7 +612,7 @@ function approveCombo(ex, budgetLeft, minEv, minLegs){
    себе не гарантия — без книги и комиссий это не арбитраж, а картинка. */
 function checkArbLegs(legs, mp, books){
   let sets = null, cost = 0;
-  const lots = [];
+  const legData = [];  // Store per-leg data including book min requirements
   for (const [tid] of legs){
     if (!tid) return { ok: false, why: "нет идентификатора книги", exec_sets: 0, exec_profit: 0 };
     const book = books ? books[tid] : null;
@@ -611,14 +628,20 @@ function checkArbLegs(legs, mp, books){
     const price = +asks[0][0], size = +asks[0][1];
     cost += allin(price, mp);
     sets = sets === null ? size : Math.min(sets, size);
-    lots.push(price);
+    legData.push({ price, book_min_shares: +book.min_order_size });
   }
   sets = Math.floor(sets || 0);
   const base = { exec_sets: sets, exec_cost: Math.round(cost*1000)/1000, exec_profit: 0 };
   if (sets <= 0) return Object.assign(base, { ok: false, why: "в книге нет объёма" });
   if (cost >= 1) return Object.assign(base, { ok: false, why: `полная цена комплекта ${cost.toFixed(3)} ≥ $1 — прибыли нет` });
-  if (lots.some(pr => allin(pr, mp)*sets + EPS_M < mp.min_notional))
-    return Object.assign(base, { ok: false, why: `объёма не хватает на минимальный ордер $${mp.min_notional} по каждой ноге` });
+  // Проверяем минимум на каждой ноге: как USDC notional, так и shares
+  for (const leg of legData) {
+    const notional = allin(leg.price, mp) * sets;
+    if (notional + EPS_M < mp.min_notional)
+      return Object.assign(base, { ok: false, why: `объёма не хватает на минимальный ордер $${mp.min_notional} по каждой ноге` });
+    if (sets + EPS_M < leg.book_min_shares)
+      return Object.assign(base, { ok: false, why: `объём ${sets} акций < минимум книги ${leg.book_min_shares} акций на одной из ног` });
+  }
   return Object.assign(base, { ok: true, why: null, exec_profit: Math.round((1-cost)*sets*100)/100 });
 }
 

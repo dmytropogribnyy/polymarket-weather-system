@@ -40,9 +40,17 @@ def _book_fetch(books):
         if tid not in books:
             # Простая ошибка без деталей, как при реальной сети
             raise RuntimeError("book not found")
-        # Добавляем обязательные метаданные стакана для fail-closed валидации
+        book = books[tid]
+        # Если book уже в новом формате (с levels, min_order_size, tick_size), используем как есть
+        if isinstance(book, dict) and "levels" in book:
+            return dict(
+                asks=[dict(price=p, size=s) for p, s in book["levels"]],
+                min_order_size=str(book.get("min_order_size", 1)),
+                tick_size=str(book.get("tick_size", 0.01))
+            )
+        # Иначе старый формат (просто массив уровней) — добавляем дефолтные метаданные
         return dict(
-            asks=[dict(price=p, size=s) for p, s in books[tid]],
+            asks=[dict(price=p, size=s) for p, s in book],
             min_order_size="1",
             tick_size="0.01"
         )
