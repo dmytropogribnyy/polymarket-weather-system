@@ -1262,7 +1262,13 @@ async function scan(){
   } else if (sBest && sWhy){
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
   } else if (vConf >= 5){
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
+    // Validate top single pick has necessary data for execution
+    const vSide = vTop.yes && vTop.yes.conf === 5 ? vTop.yes : (vTop.no && vTop.no.conf === 5 ? vTop.no : null);
+    if (vSide && vSide.token_id && vSide.mp){
+      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — первая карточка ниже.</div>`;
+    } else {
+      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Лучший кандидат не имеет обязательных метаданных для исполнения (token_id, mp).</div>`;
+    }
   } else {
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Это нормальный результат: ставим только при подтверждённом перевесе.</div>`;
   }

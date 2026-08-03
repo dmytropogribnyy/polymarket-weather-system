@@ -641,7 +641,8 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         except Exception:
             skipped.append(dict(bucket=b, why="книга недоступна"))
             continue
-    base = dict(lots=[], skipped=skipped, total_usd=0.0, min_usd=float(sum((l["min_usd"] for l in legs), Decimal("0"))),
+    base = dict(lots=[], skipped=skipped, total_usd=0.0, 
+                min_usd=float(_cents(sum((l["min_usd"] for l in legs), Decimal("0")), rounding=ROUND_UP)),
                 p_covered=0.0, ev_final=None, stake=round(stake, 2),
                 budget_left=round(budget_left, 2), ok=False)
     if len(legs) < COMBO_MIN_LEGS:
@@ -706,7 +707,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
     exp_pay = sum((l["p"] or 0)*l["payout"] for l in lots)
     ev_final = round(exp_pay/float(total) - 1, 4) if total > 0 else None
     return dict(lots=lots, skipped=skipped, total_usd=float(total),
-                min_usd=float(_cents(min_total)),
+                min_usd=float(_cents(min_total, rounding=ROUND_UP)),  # Conservative ceiling
                 p_covered=round(sum(l["p"] for l in lots if l.get("p")), 3),
                 ev_final=ev_final, stake=round(stake, 2),
                 budget_left=round(budget_left, 2), ok=True, reason=None)
