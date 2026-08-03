@@ -58,10 +58,20 @@ out.fam_prob = cases.fam_prob.map(c => {
   return { name: c.name, p: res.p === null ? null : r(res.p, 6), by_fam: byFam };
 });
 
-out.log_pool = cases.log_pool.map(c => ({
-  name: c.name,
-  rows: C.logPool(c.rows).map(x => ({ p: r(x.p, 9), pLo: r(x.pLo, 9), pHi: r(x.pHi, 9) }))
-}));
+out.log_pool = cases.log_pool.map(c => {
+  if (c.expect_error) {
+    try {
+      C.logPool(c.rows);
+      return { name: c.name, error: false, msg: 'Expected error but succeeded' };
+    } catch (err) {
+      return { name: c.name, error: true, msg: err.message };
+    }
+  }
+  return {
+    name: c.name,
+    rows: C.logPool(c.rows).map(x => ({ p: r(x.p, 9), pLo: r(x.pLo, 9), pHi: r(x.pHi, 9) }))
+  };
+});
 
 out.coverage = cases.coverage.map(c => ({ name: c.name, ok: C.coverageOk(c.ranges) }));
 

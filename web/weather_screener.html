@@ -400,6 +400,11 @@ function famProb(day, lo, hi, unit, fams, lead, dbias){
 /* Усадка к рынку: нормализованный лог-пул p^λ·q^(1−λ) по ПОЛНОМУ набору бакетов.
    rows: [{p,pLo,pHi,mid}] -> [{p,pLo,pHi}] (усаженные). */
 function logPool(rows){
+  // Validate complete data: all rows must have p, pLo, pHi, mid
+  const complete = rows.filter(r => r.p != null && r.pLo != null && r.pHi != null && r.mid != null);
+  if (complete.length < rows.length){
+    throw new Error("неполный ансамбль бакетов — log pool требует полных данных по всем бакетам");
+  }
   const qs = rows.reduce((s,r) => s + Math.max(r.mid, EPS_T), 0) || 1;
   const qn = rows.map(r => Math.max(r.mid, EPS_T)/qs);
   const out = rows.map(() => ({}));
@@ -1344,32 +1349,44 @@ async function scan(){
     vConf = Math.max(vConf, yesConf, noConf);
   }
   const modeName = MODE === "min" ? "минимумы" : "максимумы";
-  // Бюджет погодных входов одной ДАТЫ РЕЗОЛЮЦИИ: общий на все рекомендации прогона
-  let weatherCap = Math.min(limit, WEATHER_DAY_CAP);
+  // Date-keyed budget allocator: each resolution date gets its own cap
+  const dateBudgets = {};
+  const uniqueDates = new Set([...combos.map(c => c.r.dateStr), ...picks.map(p => p.r.dateStr)]);
+  for (const dateStr of uniqueDates){
+    dateBudgets[dateStr] = Math.min(limit, WEATHER_DAY_CAP);
+  }
+  
   let sExec = null, sWhy = null, sStake = 0;
   if (sBest){
-    sStake = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+    const sBestDate = sBest.r.dateStr;
+    const dateCap = dateBudgets[sBestDate] || 0;
+    sStake = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, Math.min(limit, dateCap)) || 1;
     const bs = await fetchBooks(sBest.tids);
-    sExec = comboLots(Object.assign({}, sBest, { stake: sStake }), sBest.mp, weatherCap, bs);
-    const [okExec, why] = approveCombo(sExec, weatherCap);
+    sExec = comboLots(Object.assign({}, sBest, { stake: sStake }), sBest.mp, dateCap, bs);
+    const [okExec, why] = approveCombo(sExec, dateCap);
     if (!okExec){ sWhy = why; sExec = null; }
   }
   if (sExec){
-    // Series approved: reduce budget for singles
-    weatherCap = Math.max(0, weatherCap - sExec.total_usd);
+    // Series approved: reduce date budget
+    const sBestDate = sBest.r.dateStr;
+    dateBudgets[sBestDate] = Math.max(0, dateBudgets[sBestDate] - sExec.total_usd);
     const vLegs = sExec.lots.map(l => `${esc(l.bucket)} ≤${fmtC(l.limit)} × ${l.shares.toFixed(1)} акц ($${l.usd.toFixed(2)} с комиссией)`).join(" · ");
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(weatherCap + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(dateBudgets[sBestDate] + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
   }
   if (sBest && sWhy){
     // Series rejected: announce but allow fallthrough to singles
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
   }
-  // Try singles if vConf >= 5 and budget remains (regardless of series outcome)
-  if (vConf >= 5 && weatherCap > 0){
+  // Try singles if vConf >= 5 and any date budget remains
+  const hasDateBudget = Object.values(dateBudgets).some(b => b > 0);
+  if (vConf >= 5 && hasDateBudget){
     // Iterate all candidates to find first executable single pick
-    // Each candidate gets resolution-date remainder, not a fresh cap
+    // Each candidate uses its resolution-date remainder
     let singleExec = null, singleReason = null, bestPick = null, picksChecked = [];
     for (const candidate of picks){
+      const candDate = candidate.r.dateStr;
+      const dateCap = dateBudgets[candDate] || 0;
+      if (dateCap <= 0) continue;  // Skip if date budget exhausted
       // Try YES side if conf=5
       if (candidate.yes && candidate.yes.conf === 5){
         const vSide = candidate.yes;
@@ -1378,11 +1395,11 @@ async function scan(){
         // Select YES token from bucket (tidYes if available, else tid)
         const token_id = vSide.b.tidYes || vSide.b.tid;
         if (!token_id){ picksChecked.push(`${r.city.name} YES: нет token_id`); continue; }
-        const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+        const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, dateCap)) || 1;
         const vBook = await fetchBookLevels(token_id);
         if (!vBook){ picksChecked.push(`${r.city.name} YES: книга недоступна`); continue; }
         const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, weatherCap, vBook, vSide.p, vSide.pHi);
+                               r.mp, dateCap, vBook, vSide.p, vSide.pHi);
         if (exec.ok){
           singleExec = exec; bestPick = { ...vSide, r, side: "YES" }; break;
         } else {
@@ -1397,11 +1414,11 @@ async function scan(){
         // Select NO token from bucket (tidNo if available, else tid won't work)
         const token_id = vSide.b.tidNo;
         if (!token_id){ picksChecked.push(`${r.city.name} NO: нет token_id для NO`); continue; }
-        const vStake = kellyStake(1-vSide.p, 1-vSide.pHi, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+        const vStake = kellyStake(1-vSide.p, 1-vSide.pHi, vSide.cost, bankroll, Math.min(limit, dateCap)) || 1;
         const vBook = await fetchBookLevels(token_id);
         if (!vBook){ picksChecked.push(`${r.city.name} NO: книга недоступна`); continue; }
         const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, weatherCap, vBook, 1-vSide.p, 1-vSide.pLo);
+                               r.mp, dateCap, vBook, 1-vSide.p, 1-vSide.pLo);
         if (exec.ok){
           singleExec = exec; bestPick = { ...vSide, r, side: "NO" }; break;
         } else {

@@ -381,6 +381,11 @@ def log_pool(rows):
     взаимоисключающих бакетов. Вызывать только после coverage_ok: нормировать
     неполный поднабор к единице — значит выдумать вероятность.
     rows: [{p,pLo,pHi,mid}] -> [{p,pLo,pHi}]."""
+    # Validate complete data: all rows must have p, pLo, pHi, mid
+    complete = [r for r in rows if r.get("p") is not None and r.get("pLo") is not None 
+                and r.get("pHi") is not None and r.get("mid") is not None]
+    if len(complete) < len(rows):
+        raise ValueError("неполный ансамбль бакетов — log pool требует полных данных по всем бакетам")
     qn = [max(r["mid"], EPS_TICK) for r in rows]
     qs = sum(qn) or 1.0
     qn = [x/qs for x in qn]

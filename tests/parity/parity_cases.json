@@ -502,6 +502,29 @@
           "mid": 0.45
         }
       ]
+    },
+    {
+      "name": "missing mid in one bucket → must reject",
+      "rows": [
+        {
+          "p": 0.3,
+          "pLo": 0.25,
+          "pHi": 0.35,
+          "mid": 0.28
+        },
+        {
+          "p": 0.5,
+          "pLo": 0.45,
+          "pHi": 0.55
+        },
+        {
+          "p": 0.2,
+          "pLo": 0.15,
+          "pHi": 0.25,
+          "mid": 0.22
+        }
+      ],
+      "expect_error": true
     }
   ],
   "coverage": [

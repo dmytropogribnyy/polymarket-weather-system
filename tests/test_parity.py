@@ -76,10 +76,19 @@ def py_results(cases):
         out["fam_prob"].append(dict(name=c["name"], p=None if p is None else _r(p, 6),
                                     by_fam={k: _r(v, 3) for k, v in sorted(by.items())}))
 
-    out["log_pool"] = [dict(name=c["name"],
-                            rows=[dict(p=_r(x["p"], 9), pLo=_r(x["pLo"], 9), pHi=_r(x["pHi"], 9))
-                                  for x in wx.log_pool(c["rows"])])
-                       for c in cases["log_pool"]]
+    out["log_pool"] = []
+    for c in cases["log_pool"]:
+        if c.get("expect_error"):
+            try:
+                wx.log_pool(c["rows"])
+                out["log_pool"].append(dict(name=c["name"], error=False, msg="Expected error but succeeded"))
+            except (ValueError, Exception) as e:
+                out["log_pool"].append(dict(name=c["name"], error=True, msg=str(e)))
+        else:
+            out["log_pool"].append(dict(name=c["name"],
+                                        rows=[dict(p=_r(x["p"], 9), pLo=_r(x["pLo"], 9), pHi=_r(x["pHi"], 9))
+                                              for x in wx.log_pool(c["rows"])]))
+
 
     out["coverage"] = [dict(name=c["name"], ok=wx.coverage_ok([tuple(x) for x in c["ranges"]]))
                        for c in cases["coverage"]]
@@ -221,10 +230,22 @@ class ParityTest(unittest.TestCase):
 
     def test_shrinkage_to_market(self):
         for j, p in zip(self.js["log_pool"], self.py["log_pool"]):
-            self.assertEqual(j["name"], p["name"])
-            for i, (jr, pr) in enumerate(zip(j["rows"], p["rows"])):
-                for key in ("p", "pLo", "pHi"):
-                    self._num_eq(jr[key], pr[key], 1e-9, f"{p['name']}[{i}].{key}")
+            with self.subTest(name=j["name"]):
+                self.assertEqual(j["name"], p["name"])
+                if "error" in j:
+                    # Error case
+                    self.assertTrue(j.get("error"), f"JS should reject: {j['name']}")
+                    self.assertTrue(p.get("error"), f"Python should reject: {p['name']}")
+                    # Both should have a message containing the key phrase
+                    self.assertIn("неполный ансамбль", j.get("msg", ""), f"JS error msg: {j.get('msg')}")
+                    self.assertIn("неполный ансамбль", p.get("msg", ""), f"Python error msg: {p.get('msg')}")
+                else:
+                    # Success case
+                    self.assertIn("rows", j, f"JS should return rows: {j['name']}")
+                    self.assertIn("rows", p, f"Python should return rows: {p['name']}")
+                    for i, (jr, pr) in enumerate(zip(j["rows"], p["rows"])):
+                        for key in ("p", "pLo", "pHi"):
+                            self._num_eq(jr[key], pr[key], 1e-9, f"{p['name']}[{i}].{key}")
 
     def test_coverage_and_buckets(self):
         self.assertEqual([x["ok"] for x in self.js["coverage"]],
