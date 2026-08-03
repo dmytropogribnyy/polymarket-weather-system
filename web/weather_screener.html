@@ -1335,10 +1335,16 @@ async function scan(){
   }
   // ВЕРДИКТ ДНЯ: арбитраж (баннеры выше) > серия > одиночная 5/5 > честный пропуск
   const vTop = picks[0] || null;
-  const vConf = vTop ? Math.min(vTop.yes ? vTop.yes.conf : 5, vTop.no ? vTop.no.conf : 5) : 0;
+  // Compute vConf from ALL picks, not just first one
+  let vConf = 0;
+  for (const pick of picks){
+    const yesConf = pick.yes ? pick.yes.conf : 0;
+    const noConf = pick.no ? pick.no.conf : 0;
+    vConf = Math.max(vConf, yesConf, noConf);
+  }
   const modeName = MODE === "min" ? "минимумы" : "максимумы";
   // Бюджет погодных входов одной ДАТЫ РЕЗОЛЮЦИИ: общий на все рекомендации прогона
-  const weatherCap = Math.min(limit, WEATHER_DAY_CAP);
+  let weatherCap = Math.min(limit, WEATHER_DAY_CAP);
   let sExec = null, sWhy = null, sStake = 0;
   if (sBest){
     sStake = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, Math.min(limit, weatherCap)) || 1;
@@ -1348,11 +1354,17 @@ async function scan(){
     if (!okExec){ sWhy = why; sExec = null; }
   }
   if (sExec){
+    // Series approved: reduce budget for singles
+    weatherCap = Math.max(0, weatherCap - sExec.total_usd);
     const vLegs = sExec.lots.map(l => `${esc(l.bucket)} ≤${fmtC(l.limit)} × ${l.shares.toFixed(1)} акц ($${l.usd.toFixed(2)} с комиссией)`).join(" · ");
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${weatherCap.toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
-  } else if (sBest && sWhy){
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(weatherCap + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
+  }
+  if (sBest && sWhy){
+    // Series rejected: announce but allow fallthrough to singles
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
-  } else if (vConf >= 5){
+  }
+  // Try singles if vConf >= 5 and budget remains (regardless of series outcome)
+  if (vConf >= 5 && weatherCap > 0){
     // Iterate all candidates to find first executable single pick
     // Each candidate gets resolution-date remainder, not a fresh cap
     let singleExec = null, singleReason = null, bestPick = null, picksChecked = [];
