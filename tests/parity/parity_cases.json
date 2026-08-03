@@ -94,7 +94,7 @@
       ]
     },
     {
-      "name": "canonical fee schedule crypto 0.07",
+      "name": "alternative fee schedule 0.07",
       "markets": [
         {
           "feesEnabled": true,

@@ -14,14 +14,14 @@ class TestMarketParams(unittest.TestCase):
         with self.assertRaises(TypeError):
             w.allin(0.10)
 
-    def test_weather_and_crypto_do_not_share_one_constant(self):
+    def test_markets_do_not_share_one_fee_constant(self):
         """Разные рынки — разные комиссии, и полная цена обязана это отражать."""
         wx = w.parse_market_params(market(taker_base_fee=500))
-        crypto = w.parse_market_params(market(taker_base_fee=200))
+        other = w.parse_market_params(market(taker_base_fee=200))
         self.assertIsNotNone(wx)
-        self.assertIsNotNone(crypto)
-        self.assertNotEqual(wx.fee_rate, crypto.fee_rate)
-        self.assertGreater(w.allin(0.5, wx), w.allin(0.5, crypto))
+        self.assertIsNotNone(other)
+        self.assertNotEqual(wx.fee_rate, other.fee_rate)
+        self.assertGreater(w.allin(0.5, wx), w.allin(0.5, other))
 
     def test_bps_and_fraction_are_both_understood(self):
         self.assertAlmostEqual(w.parse_market_params(market(taker_base_fee=500)).fee_rate, 0.05, places=12)

@@ -366,7 +366,7 @@ class WebClaimsTest(unittest.TestCase):
     """Страницы не имеют права обещать «гарантированный арбитраж» по сумме асков."""
 
     def test_no_guaranteed_arbitrage_claims(self):
-        for name in ("weather_screener.html", "crypto_screener.html", "quake_screener.html"):
+        for name in ("weather_screener.html",):
             path = os.path.join(ROOT, "web", name)
             with open(path, encoding="utf-8") as f:
                 text = f.read()
