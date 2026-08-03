@@ -696,7 +696,7 @@ def check_arb_legs(legs, mp, fetch=None):
     без комиссий это не арбитраж, а картинка.
     legs: [(token_id, котируемая цена)]."""
     fetch = fetch or get
-    sets, cost, lots = None, 0.0, []
+    sets, cost, leg_data = None, 0.0, []
     for tid, _quoted in legs:
         if not tid:
             return dict(ok=False, why="нет идентификатора книги", exec_sets=0, exec_profit=0.0)
@@ -722,15 +722,20 @@ def check_arb_legs(legs, mp, fetch=None):
         price, size = asks[0]
         cost += allin(price, mp)
         sets = size if sets is None else min(sets, size)
-        lots.append((price, size))
+        leg_data.append(dict(price=price, size=size, book_min_shares=book_min_order))
     sets = int(math.floor(sets or 0))
     res = dict(exec_sets=sets, exec_cost=round(cost, 3), exec_profit=0.0)
     if sets <= 0:
         return dict(res, ok=False, why="в книге нет объёма")
     if cost >= 1.0:
         return dict(res, ok=False, why=f"полная цена комплекта {cost:.3f} ≥ $1 — прибыли нет")
-    if any(allin(pr, mp)*sets + 1e-9 < mp.min_notional for pr, _ in lots):
-        return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_notional:g} по каждой ноге")
+    # Проверяем минимум на каждой ноге: как USDC notional, так и shares
+    for leg in leg_data:
+        notional = allin(leg["price"], mp) * sets
+        if notional + 1e-9 < mp.min_notional:
+            return dict(res, ok=False, why=f"объёма не хватает на минимальный ордер ${mp.min_notional:g} по каждой ноге")
+        if sets + 1e-9 < leg["book_min_shares"]:
+            return dict(res, ok=False, why=f"объём {sets} акций < минимум книги {leg['book_min_shares']:g} акций на одной из ног")
     return dict(res, ok=True, why=None, exec_profit=round((1.0-cost)*sets, 2))
 
 def single_lot(pick, mp, budget_left, fetch=None):

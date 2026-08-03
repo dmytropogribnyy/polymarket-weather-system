@@ -115,6 +115,22 @@ class ExecutableArbTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("некорректный", r["why"])
 
+    def test_arb_enforces_book_minimum_shares_per_leg(self):
+        """Арбитраж: объём в акциях обязан покрывать минимум книги (min_order_size) по каждой ноге.
+        
+        Пример: книга требует минимум 10 акций, но на двух ногах только 3 акции глубины.
+        USDC-нотионал покрыт (3 × $0.35 × 1.00875 ≈ $1.06 ≥ минимум $1), 
+        комплект прибыльный (cost < $1),
+        но book.min_order_size требует ≥10 акций на каждой ноге → NO BET."""
+        # Используем цены 0.35 на каждой ноге: 0.35 + 0.35 = 0.70 (прибыльно)
+        # allin(0.35) ≈ 0.35 * 1.00875 ≈ 0.353 → 3 * 0.353 ≈ $1.06 (нотионал покрыт)
+        # Но min_order_size=10, а глубина только 3 акции
+        f = FakeFetch({"book?token_id=a": book([(0.35, 3)], min_order_size=10),
+                       "book?token_id=b": book([(0.35, 3)], min_order_size=10)})
+        r = wd.check_arb_legs([("a", 0.35), ("b", 0.35)], self.MP, f)
+        self.assertFalse(r["ok"], "арбитраж с объёмом 3 акции должен быть отклонён (min=10)")
+        self.assertIn("акций", r["why"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
