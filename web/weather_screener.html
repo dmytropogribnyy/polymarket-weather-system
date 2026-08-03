@@ -781,13 +781,22 @@ function singleLot(pick, mp, budgetLeft, book){
   if (!got)
     return { ok: false, shares: 0, usd: 0, 
              reason: `в книге нет объёма на минимум $${leg_mp.min_notional} / ${leg_min_shares} акций` };
-  return { ok: true, shares: round1(got.sh), usd: centsUp(got.usd), limit: got.lim, reason: null };
+  // Normalize shares to supported precision BEFORE recomputing totals
+  const norm_sh = round1(got.sh);
+  // Recompute fee-inclusive debit from normalized shares
+  const recomp_usd = norm_sh * allin(got.lim, mp);
+  const final_usd = centsUp(recomp_usd);
+  // Recheck cap with recomputed cost
+  if (recomp_usd > cap + EPS_M)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций стоимость ${final_usd.toFixed(2)} превышает лимит ${cap.toFixed(2)}` };
+  return { ok: true, shares: norm_sh, usd: final_usd, limit: got.lim, reason: null };
 }
 
 
 var PARITY_CORE = { erf, phi, f2c, parseBucket, coverageOk, parseMarketParams, eventParams,
   feeOf, allin, famProb, logPool, parseResolution, checkResolution, kellyStake,
-  walkBook, comboLots, approveCombo, checkArbLegs, chanceCombos,
+  walkBook, comboLots, approveCombo, checkArbLegs, chanceCombos, singleLot,
   LAMBDA, EPS_T, COMBO_MIN_EV, COMBO_MIN_LEGS };
 /* PARITY-CORE-END */
 
@@ -952,10 +961,14 @@ async function screenCityDate(city, dateStr, lead, ensData){
     if (base.p == null) return { city, dateStr, lead, skip: "нет модельной вероятности бакета — пул не считаем" };
     const lo1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, -1).p;
     const hi1 = famProb(day, rng[0], rng[1], city.unit, famsCal, lead, +1).p;
-    let tid = null;
-    try { const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds; tid = (t && t[0]) || null; } catch(e){}
+    let tid = null, tidYes = null, tidNo = null;
+    try {
+      const t = typeof m.clobTokenIds === "string" ? JSON.parse(m.clobTokenIds) : m.clobTokenIds;
+      if (t && t.length >= 2) { tidYes = t[0]; tidNo = t[1]; tid = t[0]; }
+      else if (t && t[0]) { tid = t[0]; tidYes = t[0]; }
+    } catch(e){}
     buckets.push({
-      title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid,
+      title: m.groupItemTitle, lo: rng[0], hi: rng[1], bid: bb, ask: ba, mid, tid, tidYes, tidNo,
       pRaw: base.p, pLoRaw: lo1, pHiRaw: hi1, fams: base.byFam,
     });
   }
@@ -1307,25 +1320,54 @@ async function scan(){
   } else if (sBest && sWhy){
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
   } else if (vConf >= 5){
-    // Validate top single pick with actual book walk and executable sizing
-    const vSide = vTop.yes && vTop.yes.conf === 5 ? vTop.yes : (vTop.no && vTop.no.conf === 5 ? vTop.no : null);
-    let singleExec = null, singleReason = null;
-    if (vSide && vSide.token_id && vSide.mp){
-      // Fetch actual book and validate executable economics
-      const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
-      const vBook = await fetchBook(vSide.token_id);
-      singleExec = singleLot({ token_id: vSide.token_id, ask: vSide.ask, stake: vStake }, 
-                              vSide.mp, weatherCap, vBook);
-      if (!singleExec.ok){
-        singleReason = singleExec.reason || "не исполняется";
+    // Iterate all candidates to find first executable single pick
+    // Each candidate gets resolution-date remainder, not a fresh cap
+    let singleExec = null, singleReason = null, bestPick = null, picksChecked = [];
+    for (const candidate of picks){
+      // Try YES side if conf=5
+      if (candidate.yes && candidate.yes.conf === 5){
+        const vSide = candidate.yes;
+        const r = candidate.r;
+        if (!r.mp){ picksChecked.push(`${r.city.name} YES: нет mp`); continue; }
+        // Select YES token from bucket (tidYes if available, else tid)
+        const token_id = vSide.b.tidYes || vSide.b.tid;
+        if (!token_id){ picksChecked.push(`${r.city.name} YES: нет token_id`); continue; }
+        const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+        const vBook = await fetchBookLevels(token_id);
+        if (!vBook){ picksChecked.push(`${r.city.name} YES: книга недоступна`); continue; }
+        const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
+                               r.mp, weatherCap, vBook);
+        if (exec.ok){
+          singleExec = exec; bestPick = { ...vSide, r, side: "YES" }; break;
+        } else {
+          picksChecked.push(`${r.city.name} YES: ${exec.reason || "не исполняется"}`);
+        }
       }
-    } else {
-      singleReason = "нет обязательных метаданных (token_id, mp)";
+      // Try NO side if conf=5
+      if (candidate.no && candidate.no.conf === 5){
+        const vSide = candidate.no;
+        const r = candidate.r;
+        if (!r.mp){ picksChecked.push(`${r.city.name} NO: нет mp`); continue; }
+        // Select NO token from bucket (tidNo if available, else tid won't work)
+        const token_id = vSide.b.tidNo;
+        if (!token_id){ picksChecked.push(`${r.city.name} NO: нет token_id для NO`); continue; }
+        const vStake = kellyStake(1-vSide.p, 1-vSide.pHi, vSide.cost, bankroll, Math.min(limit, weatherCap)) || 1;
+        const vBook = await fetchBookLevels(token_id);
+        if (!vBook){ picksChecked.push(`${r.city.name} NO: книга недоступна`); continue; }
+        const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
+                               r.mp, weatherCap, vBook);
+        if (exec.ok){
+          singleExec = exec; bestPick = { ...vSide, r, side: "NO" }; break;
+        } else {
+          picksChecked.push(`${r.city.name} NO: ${exec.reason || "не исполняется"}`);
+        }
+      }
     }
-    if (singleExec && singleExec.ok){
-      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — ${esc(vTop.city.name)} (${fmtDateRu(vTop.r.dateStr)}), ${vSide.side} на бакет «${esc(vSide.b)}», ${singleExec.shares.toFixed(1)} акций по ≤${fmtC(singleExec.limit)} за $${singleExec.usd.toFixed(2)} — первая карточка ниже.</div>`;
+    if (singleExec && bestPick){
+      html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — ${esc(bestPick.r.city.name)} (${fmtDateRu(bestPick.r.dateStr)}), ${bestPick.side} на бакет «${esc(bestPick.b.title)}», ${singleExec.shares.toFixed(1)} акций по ≤${fmtC(singleExec.limit)} за $${singleExec.usd.toFixed(2)} — первая карточка ниже.</div>`;
     } else {
-      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Лучший кандидат не прошёл исполнимую проверку: ${esc(singleReason || "не исполняется")}.</div>`;
+      const reasonList = picksChecked.slice(0,3).join("; ");
+      html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Проверено кандидатов: ${picksChecked.length}. Первые отказы: ${esc(reasonList)}.</div>`;
     }
   } else {
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): реальных ставок сейчас нет — пропуск.</b> Это нормальный результат: ставим только при подтверждённом перевесе.</div>`;
