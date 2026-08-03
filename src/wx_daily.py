@@ -680,7 +680,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         # Store RAW cost for total calculation, rounded cost for display
         lot["shares"] = round(float(sh_rounded), 1)
         lot["usd_raw_rounded"] = usd_from_rounded  # RAW for comparison
-        lot["usd"] = float(_cents(usd_from_rounded + EPS_MONEY))  # Match JavaScript centsUp behavior
+        lot["usd"] = float(_cents(usd_from_rounded, rounding=ROUND_UP))  # Conservative ceiling
         lot["payout"] = round(float(sh_rounded), 1)
         del lot["shares_raw"]
         del lot["usd_raw"]
@@ -702,7 +702,7 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
     for lot in lots:
         del lot["usd_raw_rounded"]
     
-    total = _cents(total_from_rounded + EPS_MONEY)  # Match JavaScript centsUp behavior
+    total = _cents(total_from_rounded, rounding=ROUND_UP)  # Conservative ceiling
     exp_pay = sum((l["p"] or 0)*l["payout"] for l in lots)
     ev_final = round(exp_pay/float(total) - 1, 4) if total > 0 else None
     return dict(lots=lots, skipped=skipped, total_usd=float(total),
@@ -856,8 +856,9 @@ def single_lot(pick, mp, budget_left, fetch=None):
                    reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares} акций")
     
     sh, usd, lim = got
-    return dict(ok=True, shares=float(sh), usd=float(_cents(usd)), limit=lim,
-               reason=None)
+    # Return conservative ceiling: ROUND_UP ensures reservation covers executable cost
+    return dict(ok=True, shares=float(sh), usd=float(_cents(usd, rounding=ROUND_UP)), limit=lim,
+              reason=None)
 
 
 def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):

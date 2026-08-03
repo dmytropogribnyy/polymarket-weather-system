@@ -473,7 +473,7 @@ function kellyStake(pBase, pCons, cost, bankroll, cap, depth){
   return st < 0.5 ? 0 : Math.max(st, 1);
 }
 
-const centsUp = x => Math.round(x*100 + EPS_M)/100;      // деньги: до цента, вверх на .005
+const centsUp = x => Math.ceil(x*100)/100;           // деньги: до цента, строго вверх
 const centsDown = x => Math.floor(x*100 + EPS_M)/100;    // потолки: строго вниз
 const round1 = x => Math.round(x*10)/10;
 
