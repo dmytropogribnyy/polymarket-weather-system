@@ -244,6 +244,7 @@ const WEATHER_DAY_CAP = 5;   // фаза валидации: потолок ПО
 const LAMBDA = 0.25;                 // вес СВОЕЙ модели в пуле с рынком (фаза валидации)
 const EPS_T  = 0.001;                // минимальный тик цены
 const COMBO_MIN_EV = 0.10;           // порог EV ПОСЛЕ расчёта исполнимых лотов
+const SINGLE_MIN_EV = 0.10;          // порог EV для одиночной ставки ПОСЛЕ расчёта исполнимых лотов
 const COMBO_MIN_LEGS = 2;            // комбо из одной ноги — не комбо
 const FEE_RATE_MAX = 0.20, TICK_MAX = 0.10, MIN_ORDER_MAX = 100;
 const EPS_M = 1e-9;                  // допуск двоичной дроби в деньгах
@@ -626,6 +627,16 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     delete lot.usd_raw;
   }
   
+  // Re-validate each leg after normalization: raw usd must still meet min_notional
+  // (Normalized shares will be less than or equal to raw, so no separate shares check needed)
+  for (const lot of lots){
+    const usd_raw = lot.usd_raw_rounded;
+    if (usd_raw + EPS_M < mp.min_notional){
+      const legs_for_fail = legs.map(l => ({ min_usd: l.min_usd }));
+      return fail(`после округления нога «${lot.bucket}» имеет raw debit $${usd_raw.toFixed(4)} < минимум $${mp.min_notional}`, legs_for_fail);
+    }
+  }
+  
   // Recompute total from RAW usd values (before rounding), not from rounded usd
   const total_from_rounded = lots.reduce((s,l) => s + l.usd_raw_rounded, 0);
   
@@ -749,7 +760,7 @@ function chanceCombos(r, mp, maxN, minEv, minP, maxCost){
 }
 
 /* Исполнимый лот для одиночной ставки: book walk с валидацией метаданных. */
-function singleLot(pick, mp, budgetLeft, book){
+function singleLot(pick, mp, budgetLeft, book, probability, priceCeiling){
   if (!pick) return { ok: false, shares: 0, usd: 0, reason: "нет pick" };
   if (!mp) return { ok: false, shares: 0, usd: 0, reason: "нет торговых параметров (mp)" };
   if (!pick.token_id) return { ok: false, shares: 0, usd: 0, reason: "нет token_id" };
@@ -773,6 +784,9 @@ function singleLot(pick, mp, budgetLeft, book){
     if (Math.abs(price - Math.round(price / book.tick_size) * book.tick_size) > EPS_M)
       return { ok: false, shares: 0, usd: 0, reason: `книга: цена ${price} не кратна tick=${book.tick_size}` };
   }
+  // Check price ceiling if provided
+  if (priceCeiling != null && ask > priceCeiling + EPS_M)
+    return { ok: false, shares: 0, usd: 0, reason: `цена ${ask.toFixed(4)} превышает потолок ${priceCeiling.toFixed(4)}` };
   const leg_min_shares = Math.max(mp.min_shares || 0, book.min_order_size);
   const leg_mp = Object.assign({}, mp, { min_shares: leg_min_shares });
   const stake = +pick.stake || 0;
@@ -784,20 +798,39 @@ function singleLot(pick, mp, budgetLeft, book){
   // Normalize shares to supported precision BEFORE recomputing totals
   const norm_sh = round1(got.sh);
   // Recompute fee-inclusive debit from normalized shares
-  const recomp_usd = norm_sh * allin(got.lim, mp);
+  const full_price = allin(got.lim, mp);
+  const recomp_usd = norm_sh * full_price;
   const final_usd = centsUp(recomp_usd);
+  // Re-validate post-normalization: raw debit must meet min_notional,
+  // and shares must meet book minimum (which may be stricter than the normalized result)
+  if (recomp_usd + EPS_M < mp.min_notional)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций raw debit $${recomp_usd.toFixed(4)} < минимум $${mp.min_notional}` };
+  // Book min_order_size is in shares and must be met even after rounding
+  if (norm_sh + EPS_M < book.min_order_size)
+    return { ok: false, shares: 0, usd: 0,
+             reason: `после округления акций ${norm_sh.toFixed(1)} < book min_order_size ${book.min_order_size}` };
   // Recheck cap with recomputed cost
   if (recomp_usd > cap + EPS_M)
     return { ok: false, shares: 0, usd: 0,
              reason: `после округления акций стоимость ${final_usd.toFixed(2)} превышает лимит ${cap.toFixed(2)}` };
-  return { ok: true, shares: norm_sh, usd: final_usd, limit: got.lim, reason: null };
+  // Compute fee-inclusive EV if probability provided
+  let ev_final = null;
+  if (probability != null){
+    // EV = (expected_payout - cost) / cost = (p * shares - cost) / cost = (p - full_price) / full_price
+    ev_final = (probability - full_price) / full_price;
+    if (ev_final < SINGLE_MIN_EV - EPS_M)
+      return { ok: false, shares: 0, usd: 0, ev_final,
+               reason: `EV после исполнения ${(ev_final*100).toFixed(1)}% < порог ${(SINGLE_MIN_EV*100).toFixed(0)}%` };
+  }
+  return { ok: true, shares: norm_sh, usd: final_usd, limit: got.lim, ev_final, reason: null };
 }
 
 
 var PARITY_CORE = { erf, phi, f2c, parseBucket, coverageOk, parseMarketParams, eventParams,
   feeOf, allin, famProb, logPool, parseResolution, checkResolution, kellyStake,
   walkBook, comboLots, approveCombo, checkArbLegs, chanceCombos, singleLot,
-  LAMBDA, EPS_T, COMBO_MIN_EV, COMBO_MIN_LEGS };
+  LAMBDA, EPS_T, COMBO_MIN_EV, SINGLE_MIN_EV, COMBO_MIN_LEGS };
 /* PARITY-CORE-END */
 
 /* ============ загрузка ============ */
@@ -1336,7 +1369,7 @@ async function scan(){
         const vBook = await fetchBookLevels(token_id);
         if (!vBook){ picksChecked.push(`${r.city.name} YES: книга недоступна`); continue; }
         const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, weatherCap, vBook);
+                               r.mp, weatherCap, vBook, vSide.p, vSide.pHi);
         if (exec.ok){
           singleExec = exec; bestPick = { ...vSide, r, side: "YES" }; break;
         } else {
@@ -1355,7 +1388,7 @@ async function scan(){
         const vBook = await fetchBookLevels(token_id);
         if (!vBook){ picksChecked.push(`${r.city.name} NO: книга недоступна`); continue; }
         const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, weatherCap, vBook);
+                               r.mp, weatherCap, vBook, 1-vSide.p, 1-vSide.pLo);
         if (exec.ok){
           singleExec = exec; bestPick = { ...vSide, r, side: "NO" }; break;
         } else {

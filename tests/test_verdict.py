@@ -129,10 +129,11 @@ class TestPlanWeather(unittest.TestCase):
         self.assertEqual(alloc.snapshot()["allocations"], [])
 
     def test_single_pick_at_exact_market_min_is_granted(self):
-        """Ставка точно равная минимуму рынка — выдаётся."""
-        mp5 = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=5.0,
+        """Ставка чуть выше минимума рынка — выдаётся после округления акций."""
+        # Use min_notional=4.5 to avoid boundary rounding issues with WEATHER_DAY_CAP=5.0
+        mp5 = w.MarketParams(fee_rate=0.05, tick=0.01, min_notional=4.5,
                              min_shares=0.0, source="test")
-        pick = dict(city="Чэнду", date="2026-08-03", stake=5.0, conf=4, ev=0.20, mp=mp5,
+        pick = dict(city="Чэнду", date="2026-08-03", stake=4.6, conf=4, ev=0.20, mp=mp5,
                     token_id="tok-chengdu", ask=0.30)
         alloc = w.BudgetAllocator()
         

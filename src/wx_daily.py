@@ -686,6 +686,15 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
         del lot["shares_raw"]
         del lot["usd_raw"]
     
+    # Re-validate each leg after normalization: raw usd must still meet min_notional
+    # (Normalized shares will be less than or equal to raw, so no separate shares check needed)
+    min_notional_exact = Decimal(str(mp.min_notional))
+    for lot in lots:
+        usd_raw = lot["usd_raw_rounded"]
+        if usd_raw + EPS_MONEY < min_notional_exact:
+            return dict(base, reason=(f"после округления нога «{lot['bucket']}» имеет "
+                                     f"raw debit ${float(usd_raw):.4f} < минимум ${mp.min_notional:g}"))
+    
     # Recompute total from RAW usd values (before rounding), not from rounded usd
     # This ensures we catch any case where the sum of raw costs exceeds cap
     total_from_rounded = Decimal("0")
@@ -857,8 +866,30 @@ def single_lot(pick, mp, budget_left, fetch=None):
                    reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares} акций")
     
     sh, usd, lim = got
+    # Normalize shares to executable precision (1 decimal)
+    sh_rounded = Decimal(str(round(float(sh), 1)))
+    # Recompute cost from normalized shares
+    ask_price = Decimal(str(lim))
+    full_price = ask_price + Decimal(str(mp.fee_rate)) * ask_price * (1 - ask_price)
+    usd_from_rounded = sh_rounded * full_price
+    
+    # Re-validate post-normalization: raw debit must meet min_notional, 
+    # and shares must meet book minimum (which may be stricter than the normalized result)
+    min_notional_exact = Decimal(str(mp.min_notional))
+    if usd_from_rounded + EPS_MONEY < min_notional_exact:
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason=f"после округления акций raw debit ${float(usd_from_rounded):.4f} < минимум ${mp.min_notional:g}")
+    # Book min_order_size is in shares and must be met even after rounding
+    if sh_rounded + EPS_MONEY < Decimal(str(book_min_shares)):
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason=f"после округления акций {float(sh_rounded):.1f} < book min_order_size {book_min_shares}")
+    # Recheck cap
+    if usd_from_rounded > cap + EPS_MONEY:
+        return dict(ok=False, shares=0.0, usd=0.0,
+                   reason=f"после округления акций стоимость ${float(_cents(usd_from_rounded)):.2f} превышает лимит ${float(cap):.2f}")
+    
     # Return conservative ceiling: ROUND_UP ensures reservation covers executable cost
-    return dict(ok=True, shares=float(sh), usd=float(_cents(usd, rounding=ROUND_UP)), limit=lim,
+    return dict(ok=True, shares=float(sh_rounded), usd=float(_cents(usd_from_rounded, rounding=ROUND_UP)), limit=lim,
               reason=None)
 
 
