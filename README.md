@@ -14,6 +14,8 @@ merely the ticket to play. Only the mispricing pays.
 src/wx_daily.py      main scanner: station calibration, probabilities, combo
                      construction, Kelly stake sizing, executable lots,
                      portfolio check, verdict of the day
+src/paper_eval.py    append-only full-distribution archive and proper scoring
+                     (log-loss, RPS, cheap tails, data-driven lambda)
 src/watchdog.py      6-hourly watchdog: fresh large earthquakes, arbitrage
                      signals in circuits #2 and #3
 src/check_city.py    spot-check one city: python3 check_city.py chengdu 2026-08-03
@@ -113,6 +115,29 @@ flaking. The parity test pulls the calculation core out of
 `web/weather_screener.html` and compares it with `src/wx_daily.py` number by
 number — if the page and the nightly job drift apart, CI goes red.
 
+## Paper evaluation (no money, no wallet)
+
+Every complete weather market scanned by `wx_daily.py` is emitted in
+`paper_forecasts` with the full mutually-exclusive distribution from the raw
+model, the shrunk model and normalized market midpoints. Archive a daily run:
+
+```
+python src/wx_daily.py > report.json
+python src/paper_eval.py capture report.json /persistent/path/paper_forecasts.jsonl
+```
+
+After final outcomes have been recorded, score every city-day rather than only
+the legs that happened to become bets:
+
+```
+python src/paper_eval.py score /persistent/path/paper_forecasts.jsonl outcomes.json
+```
+
+The score report compares mean log-loss and normalized RPS, summarizes all
+market buckets priced at 5¢ or less, and evaluates a fixed lambda grid. The
+ledger is atomic and append-only: an exact retry is harmless, while changed
+content for the same event and capture time is rejected.
+
 ## Current state
 
 The system went through an external review on 2026-08-02 which found a real
@@ -131,8 +156,9 @@ of the protections above are in effect for the nightly run.
 
 Bankroll ~$100, validation phase: $5/day weather cap inside a $15/day total,
 probabilities shrunk toward the market (λ=0.25), skip-days are the norm.
-Limits rise only after 30 journaled bets confirm calibration. See
-`docs/JOURNAL.md` — the first resolution was a miss, duly recorded.
+Limits rise only after enough independently settled city-days confirm
+calibration; P&L alone is not evidence. See `docs/JOURNAL.md` and the paper
+evaluation workflow above.
 
 ## Why this repository is public
 

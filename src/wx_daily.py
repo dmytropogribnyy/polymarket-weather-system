@@ -507,6 +507,7 @@ def kelly_stake(p_base, p_cons, cost, bankroll=None, cap=None, frac=0.25, depth=
 SLOPPY = []  # неэффективность книг: sum(ask) по городам
 PARSE_FAIL = [0]  # счётчик нераспознанных бакетов (сигнал смены формата)
 COMBOS = []  # «шанс-комбо»: наборы бакетов с повышенной вероятностью выигрыша
+PAPER_FORECASTS = []  # полные city-day распределения; не ставки, а оценочный архив
 
 def chance_combos(rows, mp, max_n=4, min_ev=0.15, min_p=0.40, max_cost=0.90):
     """«Шанс-комбо»: равные доли в 2-4 взаимоисключающих бакетах одного рынка.
@@ -1186,6 +1187,34 @@ def coverage_ok(ranges):
         if abs(hi1 - lo2) > 1e-9: return False
     return True
 
+def make_paper_forecast(eslug, slug, city, weather_date, lead, kind, unit,
+                        station, tier, resolution, rows, captured_at=None):
+    """Зафиксировать полное распределение ДО известного исхода.
+
+    Рынок и модель нормируются отдельно по полному набору бакетов.  Это
+    позволяет потом честно сравнить p_model, p_shrunk и рынок proper-scoring
+    метриками, даже если сумма сырых midpoint чуть отличается от единицы.
+    """
+    def normalized(key):
+        values = [max(0.0, float(row[key])) for row in rows]
+        total = sum(values)
+        if total <= 0: raise ValueError(f"нулевая масса {key}")
+        return [value / total for value in values]
+    model = normalized("p")
+    shrunk = normalized("pS")
+    market = normalized("mid")
+    buckets = []
+    for index, row in enumerate(rows):
+        buckets.append(dict(label=row["bucket"], lo=row["rng"][0], hi=row["rng"][1],
+                            p_model=model[index], p_shrunk=shrunk[index],
+                            p_market=market[index]))
+    return dict(schema_version=1,
+                captured_at=captured_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                event_slug=eslug, city_slug=slug, city=city,
+                weather_date=weather_date, lead=lead, kind=kind, unit=unit,
+                station=station, tier=tier,
+                resolution_fingerprint=resolution["fingerprint"], buckets=buckets)
+
 def screen(slug, cal, dates, kind="max", fetch=None):
     fetch = fetch or get
     icao, lat, lon, unit, ru = ST[slug]
@@ -1219,7 +1248,6 @@ def screen(slug, cal, dates, kind="max", fetch=None):
         if len(allasks) >= 5 and all(a is not None for a in allasks):
             SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
                                sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
-        if vol < 10000: continue
         volpen = 1 if vol < 30000 else 0
         day = {"all": [], "ec": [], "gf": [], "ic": [], "gm": []}
         for k in keys:
@@ -1267,6 +1295,11 @@ def screen(slug, cal, dates, kind="max", fetch=None):
         # усадка к рынку: нормализованный лог-пул p^λ · q^(1−λ) по ПОЛНОМУ набору бакетов
         for r, sh in zip(rows, log_pool(rows)):
             r["pS"], r["pLoS"], r["pHiS"] = sh["p"], sh["pLo"], sh["pHi"]
+        PAPER_FORECASTS.append(make_paper_forecast(
+            eslug, slug, ru, ds, lead, kind, unit, icao, tier, det, rows))
+        # Ликвидность запрещает реальную рекомендацию, но не должна создавать
+        # survivorship bias в бумажной оценке полной модели.
+        if vol < 10000: continue
         crows = []
         for r in rows:
             bb, ba, mid = r["bb"], r["ba"], r["mid"]
@@ -1686,6 +1719,7 @@ def main(fetch=None):
         bias_drift_over_1C=drift, errors=errors,
         pure_arb=pure_arb, most_inefficient=sloppy[:5],
         html_health=dict(coverage=check_coverage(fetch), parse_fails=PARSE_FAIL[0]),
+        paper_forecasts=PAPER_FORECASTS,
         quakes=quakes, crypto=crypto,
     ), ensure_ascii=False, indent=1))
 

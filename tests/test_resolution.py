@@ -112,7 +112,7 @@ class TestCheckResolution(unittest.TestCase):
 class TestScreenIsFailClosed(unittest.TestCase):
     """Интеграция: `screen` не торгует рынок с непройденным контрактом."""
 
-    def _fetch(self, description):
+    def _fetch(self, description, volume=50000):
         ens_time = [f"2026-08-04T{h:02d}:00" for h in range(24)]
         hourly = {"time": ens_time}
         for i, model in enumerate(("ecmwf_ifs025", "gfs025", "icon_seamless", "gem_global")):
@@ -125,7 +125,7 @@ class TestScreenIsFailClosed(unittest.TestCase):
                                 clobTokenIds='["tok-%s", "tok-%s-no"]' % (t[:2], t[:2]),
                                 conditionId="0xc", taker_base_fee=500,
                                 minimum_tick_size=0.01, minimum_order_size=1.0))
-        event = [dict(closed=False, volume=50000, description=description, markets=markets,
+        event = [dict(closed=False, volume=volume, description=description, markets=markets,
                       title="Highest temperature in Chengdu")]
         return FakeFetch({"ensemble-api": dict(hourly=hourly),
                           "gamma-api.polymarket.com/events": event})
@@ -144,10 +144,24 @@ class TestScreenIsFailClosed(unittest.TestCase):
 
     def test_valid_rules_pass_the_contract(self):
         w.RES_FAILS.clear(); w.RES_SEEN.clear(); w.POOL_FAILS.clear(); w.PARAM_FAILS.clear()
+        w.PAPER_FORECASTS.clear()
         w.screen("chengdu", self._cal(), [(1, "2026-08-04")], fetch=self._fetch(VALID))
         self.assertEqual(w.RES_FAILS, [])
         self.assertEqual(w.PARAM_FAILS, [])
         self.assertEqual(w.POOL_FAILS, [])
+        self.assertEqual(len(w.PAPER_FORECASTS), 1)
+        snap = w.PAPER_FORECASTS[0]
+        self.assertEqual(snap["event_slug"], "highest-temperature-in-chengdu-on-august-4-2026")
+        self.assertEqual(snap["resolution_fingerprint"], w.parse_resolution(VALID)["fingerprint"])
+        for key in ("p_model", "p_shrunk", "p_market"):
+            self.assertAlmostEqual(sum(b[key] for b in snap["buckets"]), 1.0, places=6)
+
+    def test_paper_forecast_is_kept_when_volume_is_too_low_to_trade(self):
+        w.PAPER_FORECASTS.clear(); w.RES_SEEN.clear()
+        trades = w.screen("chengdu", self._cal(), [(1, "2026-08-04")],
+                          fetch=self._fetch(VALID, volume=100))
+        self.assertEqual(trades, [])
+        self.assertEqual(len(w.PAPER_FORECASTS), 1)
 
     def test_station_mismatch_produces_no_trades(self):
         w.RES_FAILS.clear(); w.RES_SEEN.clear()
