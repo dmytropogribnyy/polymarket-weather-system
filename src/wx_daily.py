@@ -4,7 +4,7 @@ day-after -> print JSON report. Self-contained, stdlib only."""
 import hashlib, json, math, re, time, urllib.request, urllib.parse
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 
 ST = {  # slug: (icao|None, lat, lon, unit, ru)
  "london":("EGLC",51.5053,0.0553,"C","Лондон"), "paris":("LFPB",48.9694,2.4414,"C","Париж"),
@@ -458,8 +458,12 @@ class BudgetAllocator:
 
     def reserve(self, wdate, amount, tag=None):
         """Зарезервировать деньги под рекомендацию. Возвращает выданную сумму:
-        0, если остатка не хватает даже на минимальный ордер."""
-        want = _cents(max(0.0, float(amount or 0.0)), rounding=ROUND_DOWN)
+        0, если остатка не хватает даже на минимальный ордер.
+        
+        Резервирует ТОЧНУЮ запрошенную сумму (или округлённую ВВЕРХ до центов),
+        чтобы исполнимая стоимость не превышала зарезервированное."""
+        # Округляем вверх до центов, чтобы зарезервированное покрывало исполнимую стоимость
+        want = _cents(max(0.0, float(amount or 0.0)), rounding=ROUND_UP)
         left = _cents(self.remaining(wdate), rounding=ROUND_DOWN)
         granted = min(want, left)
         if granted < _cents(self.min_notional):
@@ -596,12 +600,23 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
             if book_min_shares is None or book_tick is None:
                 skipped.append(dict(bucket=b, why="книга не содержит обязательные метаданные (min_order_size/tick_size)"))
                 continue
-            # Валидируем метаданные
-            if book_min_shares < 0 or book_min_shares > 10000:
-                skipped.append(dict(bucket=b, why=f"книга: min_order_size={book_min_shares} вне санитарных границ"))
+            # Валидируем метаданные: book_min_shares должен быть строго положительным
+            if book_min_shares is None or book_min_shares <= 0 or book_min_shares > 10000:
+                skipped.append(dict(bucket=b, why=f"книга: min_order_size={book_min_shares} вне санитарных границ или нулевой"))
                 continue
             if book_tick <= 0 or book_tick > TICK_MAX:
                 skipped.append(dict(bucket=b, why=f"книга: tick_size={book_tick} вне санитарных границ"))
+                continue
+            # Проверяем совместимость mp.tick (Gamma) и book_tick (CLOB)
+            # Они должны совпадать — разные тики означают несогласованные метаданные
+            if mp.tick and book_tick:
+                if abs(mp.tick - book_tick) > 1e-9:
+                    skipped.append(dict(bucket=b, why=f"несовместимые тики: Gamma tick={mp.tick} vs книга tick_size={book_tick}"))
+                    continue
+            # Проверяем, что ask совместим с book_tick
+            ask_tick_mismatch = abs(ask - round(ask / book_tick) * book_tick)
+            if ask_tick_mismatch > 1e-9:
+                skipped.append(dict(bucket=b, why=f"ask {ask} не кратен книжному tick_size={book_tick}"))
                 continue
             # Проверяем, что цены в levels соответствуют объявленному tick
             for price, size in levels:
@@ -650,9 +665,37 @@ def combo_lots(step, mp, budget_left, fetch=None, thin_mult=1.5):
             sh, usd, lim = got
         running += usd
         lots.append(dict(bucket=l["bucket"], ask=l["ask"], limit=round(lim, 3) if lim is not None else None,
-                         shares=round(float(sh), 1), usd=float(_cents(usd)),
-                         payout=round(float(sh), 1), p=l["p"]))
-    total = _cents(running)
+                         shares_raw=sh, usd_raw=usd, p=l["p"]))
+    
+    # Normalize shares to executable precision (1 decimal) and recompute costs
+    # to ensure returned shares don't exceed cap when executed
+    for lot in lots:
+        sh_raw = lot["shares_raw"]
+        # Round shares to 1 decimal (the precision we report and execute)
+        sh_rounded = Decimal(str(round(float(sh_raw), 1)))
+        # Recompute cost from rounded shares
+        ask = Decimal(str(lot["ask"]))
+        full_price = ask + Decimal(str(mp.fee_rate)) * ask * (1 - ask)
+        usd_from_rounded = sh_rounded * full_price
+        # Update lot with rounded values
+        lot["shares"] = round(float(sh_rounded), 1)
+        lot["usd"] = float(_cents(usd_from_rounded))
+        lot["payout"] = round(float(sh_rounded), 1)
+        del lot["shares_raw"]
+        del lot["usd_raw"]
+    
+    # Recompute total from rounded shares
+    total_from_rounded = Decimal("0")
+    for lot in lots:
+        total_from_rounded += Decimal(str(lot["usd"]))
+    
+    # Verify recomputed total doesn't exceed cap
+    if total_from_rounded > cap + Decimal("0.01"):  # Allow 1 cent tolerance for rounding
+        return dict(base, reason=(f"после округления акций исполнимая стоимость "
+                                 f"${float(total_from_rounded):.2f} превышает "
+                                 f"доступное ${float(cap):.2f}"))
+    
+    total = _cents(total_from_rounded)
     exp_pay = sum((l["p"] or 0)*l["payout"] for l in lots)
     ev_final = round(exp_pay/float(total) - 1, 4) if total > 0 else None
     return dict(lots=lots, skipped=skipped, total_usd=float(total),
@@ -756,12 +799,22 @@ def single_lot(pick, mp, budget_left, fetch=None):
         if book_min_shares is None or book_tick is None:
             return dict(ok=False, shares=0.0, usd=0.0,
                        reason="книга не содержит обязательные метаданные")
-        if book_min_shares < 0 or book_min_shares > 10000:
+        if book_min_shares is None or book_min_shares <= 0 or book_min_shares > 10000:
             return dict(ok=False, shares=0.0, usd=0.0,
-                       reason=f"book min_order_size={book_min_shares} вне границ")
+                       reason=f"book min_order_size={book_min_shares} вне границ или нулевой")
         if book_tick <= 0 or book_tick > TICK_MAX:
             return dict(ok=False, shares=0.0, usd=0.0,
                        reason=f"book tick_size={book_tick} вне границ")
+        # Проверяем совместимость mp.tick и book_tick
+        if mp.tick and book_tick:
+            if abs(mp.tick - book_tick) > 1e-9:
+                return dict(ok=False, shares=0.0, usd=0.0,
+                           reason=f"несовместимые тики: Gamma tick={mp.tick} vs книга tick_size={book_tick}")
+        # Проверяем, что ask совместим с book_tick
+        ask_tick_mismatch = abs(ask - round(ask / book_tick) * book_tick)
+        if ask_tick_mismatch > 1e-9:
+            return dict(ok=False, shares=0.0, usd=0.0,
+                       reason=f"ask {ask} не кратен книжному tick_size={book_tick}")
     except Exception as e:
         return dict(ok=False, shares=0.0, usd=0.0,
                    reason=f"книга недоступна: {str(e)[:40]}")

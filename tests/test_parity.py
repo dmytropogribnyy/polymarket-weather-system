@@ -227,7 +227,8 @@ class ParityTest(unittest.TestCase):
             self.assertEqual(je["reason"], pe["reason"], f"причина: {p['name']}")
             self._num_eq(je["total_usd"], pe["total_usd"], self.MONEY_TOL, f"сумма: {p['name']}")
             self._num_eq(je["min_usd"], pe["min_usd"], self.MONEY_TOL, f"минимум: {p['name']}")
-            self._num_eq(je["ev_final"], pe["ev_final"], 1e-4, f"EV: {p['name']}")
+            # EV tolerance slightly higher due to share rounding introducing extra rounding step
+            self._num_eq(je["ev_final"], pe["ev_final"], 2e-4, f"EV: {p['name']}")
             self.assertEqual([l["bucket"] for l in je["lots"]], [l["bucket"] for l in pe["lots"]])
             for jl, pl in zip(je["lots"], pe["lots"]):
                 self._num_eq(jl["usd"], pl["usd"], self.MONEY_TOL, f"{p['name']}/{pl['bucket']}/$")

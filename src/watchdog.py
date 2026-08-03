@@ -205,17 +205,27 @@ def check_arb_legs(legs, mp, fetch=None):
             if book_min_order is None or book_tick is None:
                 return dict(ok=False, why="книга без метаданных min_order_size/tick_size",
                            exec_sets=0, exec_profit=0.0)
-            if book_min_order < 0 or book_min_order > MIN_ORDER_MAX:
-                return dict(ok=False, why=f"некорректный book min_order_size={book_min_order}",
+            if book_min_order is None or book_min_order <= 0 or book_min_order > MIN_ORDER_MAX:
+                return dict(ok=False, why=f"некорректный book min_order_size={book_min_order} или нулевой",
                            exec_sets=0, exec_profit=0.0)
             if book_tick <= 0 or book_tick > TICK_MAX:
                 return dict(ok=False, why=f"некорректный book tick_size={book_tick}",
                            exec_sets=0, exec_profit=0.0)
+            # Проверяем совместимость mp.tick и book_tick
+            if mp.tick and book_tick:
+                if abs(mp.tick - book_tick) > 1e-9:
+                    return dict(ok=False, why=f"несовместимые тики: Gamma tick={mp.tick} vs книга tick_size={book_tick}",
+                               exec_sets=0, exec_profit=0.0)
         except Exception:
             return dict(ok=False, why="книга недоступна", exec_sets=0, exec_profit=0.0)
         if not asks:
             return dict(ok=False, why="пустая книга", exec_sets=0, exec_profit=0.0)
         price, size = asks[0]
+        # Проверяем, что цена совместима с book_tick
+        price_tick_mismatch = abs(price - round(price / book_tick) * book_tick)
+        if price_tick_mismatch > 1e-9:
+            return dict(ok=False, why=f"цена {price} не кратна книжному tick_size={book_tick}",
+                       exec_sets=0, exec_profit=0.0)
         cost += allin(price, mp)
         sets = size if sets is None else min(sets, size)
         leg_data.append(dict(price=price, size=size, book_min_shares=book_min_order))

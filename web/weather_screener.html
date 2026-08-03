@@ -576,9 +576,36 @@ function comboLots(step, mp, budgetLeft, books, thinMult){
     const got = walkBook(l.levels, leg_mp_use, target, cap - running - restMin) || { sh: l.min_shares, usd: l.min_usd, lim: l.limit };
     running += got.usd;
     lots.push({ bucket: l.bucket, ask: l.ask, limit: got.lim === null ? null : Math.round(got.lim*1000)/1000,
-                shares: round1(got.sh), usd: centsUp(got.usd), payout: round1(got.sh), p: l.p });
+                shares_raw: got.sh, usd_raw: got.usd, p: l.p });
   }
-  const total = centsUp(running);
+  
+  // Normalize shares to executable precision (1 decimal) and recompute costs
+  // to ensure returned shares don't exceed cap when executed
+  for (const lot of lots){
+    const sh_raw = lot.shares_raw;
+    // Round shares to 1 decimal (the precision we report and execute)
+    const sh_rounded = round1(sh_raw);
+    // Recompute cost from rounded shares
+    const ask = lot.ask;
+    const full_price = ask + mp.fee_rate * ask * (1 - ask);
+    const usd_from_rounded = sh_rounded * full_price;
+    // Update lot with rounded values
+    lot.shares = sh_rounded;
+    lot.usd = centsUp(usd_from_rounded);
+    lot.payout = sh_rounded;
+    delete lot.shares_raw;
+    delete lot.usd_raw;
+  }
+  
+  // Recompute total from rounded shares
+  const total_from_rounded = lots.reduce((s,l) => s + l.usd, 0);
+  
+  // Verify recomputed total doesn't exceed cap
+  if (total_from_rounded > cap + 0.01){  // Allow 1 cent tolerance for rounding
+    return fail(`после округления акций исполнимая стоимость $${total_from_rounded.toFixed(2)} превышает доступное $${cap.toFixed(2)}`);
+  }
+  
+  const total = centsUp(total_from_rounded);
   const expPay = lots.reduce((s,l) => s + (l.p || 0)*l.payout, 0);
   return { lots, skipped, total_usd: total, min_usd: centsUp(minTotal),
            p_covered: Math.round(lots.reduce((s,l) => s + (l.p || 0), 0)*1000)/1000,
