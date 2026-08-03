@@ -144,10 +144,17 @@ class TestScreenIsFailClosed(unittest.TestCase):
 
     def test_valid_rules_pass_the_contract(self):
         w.RES_FAILS.clear(); w.RES_SEEN.clear(); w.POOL_FAILS.clear(); w.PARAM_FAILS.clear()
+        w.PAPER_FORECASTS.clear()
         w.screen("chengdu", self._cal(), [(1, "2026-08-04")], fetch=self._fetch(VALID))
         self.assertEqual(w.RES_FAILS, [])
         self.assertEqual(w.PARAM_FAILS, [])
         self.assertEqual(w.POOL_FAILS, [])
+        self.assertEqual(len(w.PAPER_FORECASTS), 1)
+        snap = w.PAPER_FORECASTS[0]
+        self.assertEqual(snap["event_slug"], "highest-temperature-in-chengdu-on-august-4-2026")
+        self.assertEqual(snap["resolution_fingerprint"], w.parse_resolution(VALID)["fingerprint"])
+        for key in ("p_model", "p_shrunk", "p_market"):
+            self.assertAlmostEqual(sum(b[key] for b in snap["buckets"]), 1.0, places=6)
 
     def test_station_mismatch_produces_no_trades(self):
         w.RES_FAILS.clear(); w.RES_SEEN.clear()
