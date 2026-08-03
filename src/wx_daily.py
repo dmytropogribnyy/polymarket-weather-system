@@ -843,7 +843,7 @@ def single_lot(pick, mp, budget_left, fetch=None, probability=None):
         book_tick = _num(book, "tick_size", "minimum_tick_size")
         if book_min_shares is None or book_tick is None:
             return dict(ok=False, shares=0.0, usd=0.0,
-                       reason="книга не содержит обязательные метаданные")
+                       reason="книга без метаданных min_order_size/tick_size")
         if book_min_shares is None or book_min_shares <= 0 or book_min_shares > 10000:
             return dict(ok=False, shares=0.0, usd=0.0,
                        reason=f"book min_order_size={book_min_shares} вне границ или нулевой")
@@ -859,7 +859,7 @@ def single_lot(pick, mp, budget_left, fetch=None, probability=None):
         ask_tick_mismatch = abs(ask - round(ask / book_tick) * book_tick)
         if ask_tick_mismatch > 1e-9:
             return dict(ok=False, shares=0.0, usd=0.0,
-                       reason=f"ask {ask} не кратен книжному tick_size={book_tick}")
+                       reason=f"цена {ask} несовместима с tick={book_tick}")
     except Exception as e:
         return dict(ok=False, shares=0.0, usd=0.0,
                    reason=f"книга недоступна: {str(e)[:40]}")
@@ -875,7 +875,7 @@ def single_lot(pick, mp, budget_left, fetch=None, probability=None):
     got = _walk_book(levels, leg_mp, leg_min_shares, cap, price_limit=execution_limit)
     if got is None:
         return dict(ok=False, shares=0.0, usd=0.0,
-                   reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares} акций")
+                   reason=f"в книге нет объёма на минимум ${mp.min_notional:g} / {leg_min_shares:g} акций")
     
     sh, usd, lim = got
     # Normalize shares to executable precision (1 decimal)
@@ -982,7 +982,11 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
             continue
         
         # Валидируем исполнимость через реальную книгу
-        exec_result = single_lot(t, mp_t, left, fetch)
+        p_cons = t.get("p_cons")
+        if p_cons is None and t.get("pLo") is not None and t.get("pHi") is not None:
+            p_cons = (min(t["pLo"], t["pHi"]) if t.get("side") == "YES"
+                      else 1-max(t["pLo"], t["pHi"]))
+        exec_result = single_lot(t, mp_t, left, fetch, probability=p_cons)
         if not exec_result.get("ok"):
             t["stake"] = 0.0
             t["budget_block"] = exec_result.get("reason", "неисполнимая книга")
@@ -1245,13 +1249,15 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                 incomplete = f"{eslug}: нет модельной вероятности бакета «{m.get('groupItemTitle')}»"; break
             pLo_raw, _ = fam_prob(day, rng, unit, cal["fams"], lead, dbias=-1.0)
             pHi_raw, _ = fam_prob(day, rng, unit, cal["fams"], lead, dbias=+1.0)
-            tid = None
+            tid_yes = tid_no = None
             try:
                 ti = m.get("clobTokenIds")
                 ti = json.loads(ti) if isinstance(ti, str) else ti
-                tid = ti[0] if ti else None
+                tid_yes = ti[0] if ti else None
+                tid_no = ti[1] if ti and len(ti) > 1 else None
             except Exception: pass
-            rows.append(dict(bucket=m.get("groupItemTitle"), rng=rng, bb=bb, ba=ba, mid=mid, tid=tid,
+            rows.append(dict(bucket=m.get("groupItemTitle"), rng=rng, bb=bb, ba=ba, mid=mid,
+                             tid=tid_yes, tidYes=tid_yes, tidNo=tid_no,
                              p=p_raw, pLo=pLo_raw, pHi=pHi_raw, fams=fams_p))
         if incomplete:
             POOL_FAILS.append(incomplete); continue
@@ -1268,6 +1274,7 @@ def screen(slug, cal, dates, kind="max", fetch=None):
             fv = list(r["fams"].values())
             base = dict(city=ru, slug=slug, date=ds, lead=lead, bucket=r["bucket"],
                         p=round(pS,3), p_model=round(r["p"],3), mid=round(mid,3),
+                        pLo=round(pLoS,3), pHi=round(pHiS,3),
                         fams=r["fams"], vol=int(vol), tid=r["tid"], tier=tier,
                         link=f"https://polymarket.com/event/{eslug}")
             crows.append(dict(bucket=r["bucket"], p=pS, pLo=pLoS, pHi=pHiS, ask=ba,
@@ -1284,7 +1291,8 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                     trades.append(dict(base, side="YES", cost=round(c,3), ask=ba,
                                        ev=round(pS*(1/c-1)-(1-pS),2),
                                        conf=max(1,min(5,conf)), robust=robust,
-                                       stake=kelly_stake(pS, min(pLoS, pHiS), c), mp=mp))
+                                       stake=kelly_stake(pS, min(pLoS, pHiS), c), mp=mp,
+                                       token_id=r["tidYes"], p_cons=min(pLoS, pHiS)))
             if bb is not None and mid >= 0.25 and (mid-pS) >= 0.12:
                 c = allin(1-bb, mp)
                 robust = (mid-pHiS >= 0.08) and (mid-pLoS >= 0.08)
@@ -1295,7 +1303,8 @@ def screen(slug, cal, dates, kind="max", fetch=None):
                 trades.append(dict(base, side="NO", cost=round(c,3), ask=round(1-bb,3),
                                    ev=round((1-pS)*(1/c-1)-pS,2),
                                    conf=max(1,min(5,conf)), robust=robust,
-                                   stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c), mp=mp))
+                                   stake=kelly_stake(1-pS, 1-max(pLoS, pHiS), c), mp=mp,
+                                   token_id=r["tidNo"], p_cons=1-max(pLoS, pHiS)))
         for st in chance_combos(crows, mp):
             COMBOS.append(dict(st, city=ru, date=ds, lead=lead, vol=int(vol), tier=tier,
                                mp=mp, link=f"https://polymarket.com/event/{eslug}"))

@@ -325,12 +325,9 @@ class WatchdogPathsUntested(unittest.TestCase):
             self.assertGreater(combo.get("cost", 0), expected_min_cost,
                              "Chance combo should use mp.fee_rate=0.07")
     
-    @unittest.skip("Watchdog does not implement single_lot yet; requirement documented for future")
-    def test_watchdog_single_pick_validates_book_metadata(self):
-        """Watchdog single picks (if implemented) must validate book metadata."""
-        # Watchdog uses kelly_stake for sizing; single picks must validate metadata
-        # if they fetch actual books. This requirement is for future implementation.
-        pass
+    def test_watchdog_has_no_single_execution_path(self):
+        """The watchdog cannot bypass wx_daily.single_lot: it has no single path."""
+        self.assertFalse(hasattr(watchdog, "single_lot"))
     
     def test_watchdog_arb_validates_per_leg_constraints(self):
         """watchdog check_arb_legs must validate both USDC notional AND shares per leg."""

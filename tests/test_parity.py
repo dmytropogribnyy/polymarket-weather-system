@@ -158,11 +158,12 @@ def py_results(cases):
         probability = c.get("probability")
         # Convert book to fetch-compatible format
         def single_fetch(url):
-            return dict(
-                asks=[dict(price=p, size=s) for p, s in book["levels"]],
-                min_order_size=str(book.get("min_order_size", 1)),
-                tick_size=str(book.get("tick_size", 0.01))
-            )
+            payload = dict(asks=[dict(price=p, size=s) for p, s in book["levels"]])
+            if "min_order_size" in book:
+                payload["min_order_size"] = str(book["min_order_size"])
+            if "tick_size" in book:
+                payload["tick_size"] = str(book["tick_size"])
+            return payload
         result = wx.single_lot(pick, mp, c["budget_left"], single_fetch, probability=probability)
         out["single_lot"].append(dict(
             name=c["name"],
@@ -170,7 +171,7 @@ def py_results(cases):
             shares=_r(result["shares"], 1) if result["ok"] else None,
             usd=_r(result["usd"], 2) if result["ok"] else None,
             limit=_r(result.get("limit"), 2) if result["ok"] else None,
-            ev_final=_r(result.get("ev_final"), 4) if result["ok"] and result.get("ev_final") is not None else None,
+            ev_final=_r(result.get("ev_final"), 4) if result.get("ev_final") is not None else None,
             reason=result.get("reason") if not result["ok"] else None
         ))
     
@@ -308,22 +309,56 @@ class ParityTest(unittest.TestCase):
         self.assertEqual(kinds, {"BET", "NO BET"})
 
     def test_single_lot_parity(self):
-        """JS singleLot and Python single_lot must return identical results."""
-        for j, p in zip(self.js["single_lot"], self.py["single_lot"]):
+        """Parity is necessary, and each side must also match the contract oracle."""
+        for case, j, p in zip(self.cases["single_lot"], self.js["single_lot"], self.py["single_lot"]):
             self.assertEqual(j["name"], p["name"])
             self.assertEqual(j["ok"], p["ok"], f"single_lot ok: {p['name']}")
+            self.assertEqual(j["reason"], p["reason"], f"single_lot reason: {p['name']}")
+            self._num_eq(j["ev_final"], p["ev_final"], 1e-4, f"ev_final: {p['name']}")
             if j["ok"]:
                 self._num_eq(j["shares"], p["shares"], 0.1, f"shares: {p['name']}")
                 self._num_eq(j["usd"], p["usd"], self.MONEY_TOL, f"usd: {p['name']}")
                 self._num_eq(j["limit"], p["limit"], 0.01, f"limit: {p['name']}")
-                self._num_eq(j["ev_final"], p["ev_final"], 1e-4, f"ev_final: {p['name']}")
             else:
-                # Both must have a reason
                 self.assertIsNotNone(j["reason"], f"JS reason missing: {p['name']}")
-                self.assertIsNotNone(p["reason"], f"Python reason missing: {p['name']}")
+            expected = case["expected"]
+            for actual, label in ((j, "JS"), (p, "Python")):
+                self.assertEqual(actual["ok"], expected["ok"], f"{label} oracle: {case['name']}")
+                if "reason_contains" in expected:
+                    self.assertIn(expected["reason_contains"], actual["reason"] or "",
+                                  f"{label} reason oracle: {case['name']}")
+                for key, tol in (("shares", 0.1), ("usd", self.MONEY_TOL),
+                                 ("limit", 0.01), ("ev_final", 1e-4)):
+                    if key in expected:
+                        self._num_eq(actual[key], expected[key], tol,
+                                     f"{label} {key} oracle: {case['name']}")
         # At least one ok=true and one ok=false
         oks = {x["ok"] for x in self.py["single_lot"]}
         self.assertEqual(oks, {True, False}, "single_lot cases must include both ok and reject")
+
+    def test_web_run_budget_contract(self):
+        """Extracted production allocator enforces per-date and overall pots."""
+        for case, actual in zip(self.cases["web_budget"], self.js["web_budget"]):
+            expected = case["expected"]
+            self.assertEqual(actual["accepted"], expected["accepted"], case["name"])
+            self._num_eq(actual["snapshot"]["overall_left"], expected["overall_left"],
+                         self.MONEY_TOL, case["name"])
+            self.assertEqual(actual["snapshot"]["by_date"], expected["by_date"], case["name"])
+
+    def test_web_single_candidates_use_conservative_probability(self):
+        """YES/NO candidates carry the correct token and worst-case probability."""
+        for case, actual in zip(self.cases["single_candidates"], self.js["single_candidates"]):
+            self.assertEqual(actual["candidates"], case["expected"], case["name"])
+
+    def test_web_later_valid_single_is_selected(self):
+        """A rejected first 5/5 candidate cannot hide the next valid one."""
+        for case, actual in zip(self.cases["single_selection"], self.js["single_selection"]):
+            expected = case["expected"]
+            self.assertEqual(actual["selected_index"], expected["selected_index"], case["name"])
+            self.assertEqual(actual["checked"], expected["checked"], case["name"])
+            self._num_eq(actual["snapshot"]["overall_left"], expected["overall_left"],
+                         self.MONEY_TOL, case["name"])
+            self.assertEqual(actual["snapshot"]["by_date"], expected["by_date"], case["name"])
 
 
 

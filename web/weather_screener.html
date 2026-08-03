@@ -767,7 +767,7 @@ function chanceCombos(r, mp, maxN, minEv, minP, maxCost){
 }
 
 /* Исполнимый лот для одиночной ставки: book walk с валидацией метаданных. */
-function singleLot(pick, mp, budgetLeft, book, probability, priceCeiling){
+function singleLot(pick, mp, budgetLeft, book, probability){
   if (!pick) return { ok: false, shares: 0, usd: 0, reason: "нет pick" };
   if (!mp) return { ok: false, shares: 0, usd: 0, reason: "нет торговых параметров (mp)" };
   if (!pick.token_id) return { ok: false, shares: 0, usd: 0, reason: "нет token_id" };
@@ -832,10 +832,91 @@ function singleLot(pick, mp, budgetLeft, book, probability, priceCeiling){
   return { ok: true, shares: norm_sh, usd: final_usd, limit: got.lim, ev_final, reason: null };
 }
 
+/* Маленький распределитель только на текущий web-прогон. У каждой даты
+   резолюции свой WEATHER_DAY_CAP, но все даты одновременно делят общий limit. */
+function createRunBudget(overallLimit, perDateLimit){
+  let overallLeft = centsDown(Math.max(0, +overallLimit || 0));
+  const dateLeft = Object.create(null);
+  const perDate = centsDown(Math.max(0, +perDateLimit || 0));
+  const ensure = dateStr => {
+    if (!dateStr) return false;
+    if (dateLeft[dateStr] === undefined) dateLeft[dateStr] = perDate;
+    return true;
+  };
+  const remaining = dateStr => {
+    if (!ensure(dateStr)) return 0;
+    return centsDown(Math.max(0, Math.min(dateLeft[dateStr], overallLeft)));
+  };
+  const reserve = (dateStr, usd) => {
+    const amount = centsUp(+usd || 0);
+    if (!(amount > 0) || amount > remaining(dateStr) + EPS_M) return false;
+    dateLeft[dateStr] = centsDown(Math.max(0, dateLeft[dateStr] - amount));
+    overallLeft = centsDown(Math.max(0, overallLeft - amount));
+    return true;
+  };
+  const snapshot = () => ({
+    overall_left: overallLeft,
+    by_date: Object.fromEntries(Object.keys(dateLeft).sort().map(d => [d, remaining(d)]))
+  });
+  return { remaining, reserve, snapshot };
+}
+
+/* Нормализуем обе стороны 5/5 в один детерминированный список. Для финального
+   EV используется только осторожная вероятность: YES=min(pLo,pHi),
+   NO=1-max(pLo,pHi). */
+function singleCandidates(picks){
+  const out = [];
+  for (const group of (picks || [])){
+    const r = group.r || {};
+    if (group.yes && group.yes.conf === 5){
+      const s = group.yes;
+      out.push({ side: "YES", r, vSide: s, token_id: s.b && (s.b.tidYes || s.b.tid),
+                 pBase: s.p, pCons: Math.min(s.pLo == null ? s.p : s.pLo,
+                                             s.pHi == null ? s.p : s.pHi),
+                 ask: s.ask, cost: s.cost });
+    }
+    if (group.no && group.no.conf === 5){
+      const s = group.no;
+      out.push({ side: "NO", r, vSide: s, token_id: s.b && s.b.tidNo,
+                 pBase: 1-s.p, pCons: 1-Math.max(s.pLo == null ? s.p : s.pLo,
+                                                s.pHi == null ? s.p : s.pHi),
+                 ask: s.ask, cost: s.cost });
+    }
+  }
+  return out;
+}
+
+/* Исполняем кандидатов по порядку до первого реального BET. Неудачный первый
+   кандидат не скрывает следующий; бюджет резервируется только после ok=true. */
+async function findExecutableSingle(candidates, budget, execute){
+  const checked = [];
+  for (let index = 0; index < (candidates || []).length; index++){
+    const candidate = candidates[index];
+    const dateStr = candidate.r ? candidate.r.dateStr : candidate.dateStr;
+    const left = budget.remaining(dateStr);
+    if (!(left > 0)){
+      checked.push({ index, reason: "бюджет даты или общий лимит исчерпан" });
+      continue;
+    }
+    const exec = await execute(candidate, left);
+    if (!exec || !exec.ok){
+      checked.push({ index, reason: (exec && exec.reason) || "не исполняется" });
+      continue;
+    }
+    if (!budget.reserve(dateStr, exec.usd)){
+      checked.push({ index, reason: "исполнимая сумма не поместилась в остаток бюджета" });
+      continue;
+    }
+    return { exec, candidate, index, checked };
+  }
+  return { exec: null, candidate: null, index: null, checked };
+}
+
 
 var PARITY_CORE = { erf, phi, f2c, parseBucket, coverageOk, parseMarketParams, eventParams,
   feeOf, allin, famProb, logPool, parseResolution, checkResolution, kellyStake,
   walkBook, comboLots, approveCombo, checkArbLegs, chanceCombos, singleLot,
+  createRunBudget, singleCandidates, findExecutableSingle,
   LAMBDA, EPS_T, COMBO_MIN_EV, SINGLE_MIN_EV, COMBO_MIN_LEGS };
 /* PARITY-CORE-END */
 
@@ -1340,7 +1421,6 @@ async function scan(){
     }
   }
   // ВЕРДИКТ ДНЯ: арбитраж (баннеры выше) > серия > одиночная 5/5 > честный пропуск
-  const vTop = picks[0] || null;
   // Compute vConf from ALL picks, not just first one
   let vConf = 0;
   for (const pick of picks){
@@ -1349,83 +1429,53 @@ async function scan(){
     vConf = Math.max(vConf, yesConf, noConf);
   }
   const modeName = MODE === "min" ? "минимумы" : "максимумы";
-  // Date-keyed budget allocator: each resolution date gets its own cap
-  const dateBudgets = {};
-  const uniqueDates = new Set([...combos.map(c => c.r.dateStr), ...picks.map(p => p.r.dateStr)]);
-  for (const dateStr of uniqueDates){
-    dateBudgets[dateStr] = Math.min(limit, WEATHER_DAY_CAP);
-  }
+  // One in-scan allocator: per-resolution-date cap inside the overall run limit.
+  const runBudget = createRunBudget(limit, WEATHER_DAY_CAP);
   
   let sExec = null, sWhy = null, sStake = 0;
   if (sBest){
     const sBestDate = sBest.r.dateStr;
-    const dateCap = dateBudgets[sBestDate] || 0;
+    const dateCap = runBudget.remaining(sBestDate);
     sStake = kellyStake(sBest.pWin, sBest.pLo, sBest.cost, bankroll, Math.min(limit, dateCap)) || 1;
     const bs = await fetchBooks(sBest.tids);
     sExec = comboLots(Object.assign({}, sBest, { stake: sStake }), sBest.mp, dateCap, bs);
     const [okExec, why] = approveCombo(sExec, dateCap);
     if (!okExec){ sWhy = why; sExec = null; }
+    else if (!runBudget.reserve(sBestDate, sExec.total_usd)){
+      sWhy = "исполнимая серия не помещается в общий остаток бюджета";
+      sExec = null;
+    }
   }
   if (sExec){
-    // Series approved: reduce date budget
+    // Series is already reserved: the following single sees both reduced pots.
     const sBestDate = sBest.r.dateStr;
-    dateBudgets[sBestDate] = Math.max(0, dateBudgets[sBestDate] - sExec.total_usd);
     const vLegs = sExec.lots.map(l => `${esc(l.bucket)} ≤${fmtC(l.limit)} × ${l.shares.toFixed(1)} акц ($${l.usd.toFixed(2)} с комиссией)`).join(" · ");
-    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(dateBudgets[sBestDate] + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
+    html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): СТАВИТЬ СЕРИЮ — размер $${sExec.total_usd.toFixed(2)}</b><div style="margin-top:6px">${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}): купить бакеты «${sBest.buckets.map(b => esc(b.title)).join("», «")}» <div style="margin:4px 0;font-size:13px">ЛИМИТ-ордера (исполнимые лоты по книгам): ${vLegs} — итого $${sExec.total_usd.toFixed(2)} из бюджета даты $${(runBudget.remaining(sBestDate) + sExec.total_usd).toFixed(2)}</div> — комплект ${fmtC(sBest.cost)} за $1 выплаты · шанс <b>${fmtP(sBest.pWin)}</b> (${fmtP(sBest.pLo)}–${fmtP(sBest.pHi)}) · EV после комиссий и лотов <b>${(100*sExec.ev_final).toFixed(0)}%</b> · <a class="mlink" href="${sBest.r.link}" target="_blank" rel="noopener">открыть рынок →</a></div><div style="margin-top:6px;font-size:12.5px;color:var(--ink-2)">Размер = четверть Келли от банкролла $${bankroll}, урезанная минимальными лотами рынка и общим бюджетом погодных входов этой даты резолюции ($${WEATHER_DAY_CAP} на ВСЕ рекомендации — максимумы, минимумы и серию вместе). Покупать ЛИМИТ-ордерами по указанной цене.</div></div>`;
   }
   if (sBest && sWhy){
     // Series rejected: announce but allow fallthrough to singles
     html += `<div class="card"><b>ВЕРДИКТ (${modeName}): серия НЕ ставится.</b> Кандидат ${esc(sBest.r.city.name)} (${fmtDateRu(sBest.r.dateStr)}) отклонён на расчёте исполнения: ${esc(sWhy)}.</div>`;
   }
-  // Try singles if vConf >= 5 and any date budget remains
-  const hasDateBudget = Object.values(dateBudgets).some(b => b > 0);
+  // Try every 5/5 side until the first executable one; the helper reserves it.
+  const candidates = singleCandidates(picks);
+  const hasDateBudget = candidates.some(c => runBudget.remaining(c.r.dateStr) > 0);
   if (vConf >= 5 && hasDateBudget){
-    // Iterate all candidates to find first executable single pick
-    // Each candidate uses its resolution-date remainder
-    let singleExec = null, singleReason = null, bestPick = null, picksChecked = [];
-    for (const candidate of picks){
-      const candDate = candidate.r.dateStr;
-      const dateCap = dateBudgets[candDate] || 0;
-      if (dateCap <= 0) continue;  // Skip if date budget exhausted
-      // Try YES side if conf=5
-      if (candidate.yes && candidate.yes.conf === 5){
-        const vSide = candidate.yes;
-        const r = candidate.r;
-        if (!r.mp){ picksChecked.push(`${r.city.name} YES: нет mp`); continue; }
-        // Select YES token from bucket (tidYes if available, else tid)
-        const token_id = vSide.b.tidYes || vSide.b.tid;
-        if (!token_id){ picksChecked.push(`${r.city.name} YES: нет token_id`); continue; }
-        const vStake = kellyStake(vSide.p, vSide.pLo, vSide.cost, bankroll, Math.min(limit, dateCap)) || 1;
-        const vBook = await fetchBookLevels(token_id);
-        if (!vBook){ picksChecked.push(`${r.city.name} YES: книга недоступна`); continue; }
-        const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, dateCap, vBook, vSide.p, vSide.pHi);
-        if (exec.ok){
-          singleExec = exec; bestPick = { ...vSide, r, side: "YES" }; break;
-        } else {
-          picksChecked.push(`${r.city.name} YES: ${exec.reason || "не исполняется"}`);
-        }
-      }
-      // Try NO side if conf=5
-      if (candidate.no && candidate.no.conf === 5){
-        const vSide = candidate.no;
-        const r = candidate.r;
-        if (!r.mp){ picksChecked.push(`${r.city.name} NO: нет mp`); continue; }
-        // Select NO token from bucket (tidNo if available, else tid won't work)
-        const token_id = vSide.b.tidNo;
-        if (!token_id){ picksChecked.push(`${r.city.name} NO: нет token_id для NO`); continue; }
-        const vStake = kellyStake(1-vSide.p, 1-vSide.pHi, vSide.cost, bankroll, Math.min(limit, dateCap)) || 1;
-        const vBook = await fetchBookLevels(token_id);
-        if (!vBook){ picksChecked.push(`${r.city.name} NO: книга недоступна`); continue; }
-        const exec = singleLot({ token_id, ask: vSide.ask, stake: vStake }, 
-                               r.mp, dateCap, vBook, 1-vSide.p, 1-vSide.pLo);
-        if (exec.ok){
-          singleExec = exec; bestPick = { ...vSide, r, side: "NO" }; break;
-        } else {
-          picksChecked.push(`${r.city.name} NO: ${exec.reason || "не исполняется"}`);
-        }
-      }
-    }
+    const selected = await findExecutableSingle(candidates, runBudget, async (candidate, dateCap) => {
+      const r = candidate.r;
+      if (!r.mp) return { ok: false, reason: `${r.city.name} ${candidate.side}: нет mp` };
+      if (!candidate.token_id) return { ok: false, reason: `${r.city.name} ${candidate.side}: нет token_id` };
+      const vStake = kellyStake(candidate.pBase, candidate.pCons, candidate.cost,
+                                bankroll, Math.min(limit, dateCap)) || 1;
+      const vBook = await fetchBookLevels(candidate.token_id);
+      if (!vBook) return { ok: false, reason: `${r.city.name} ${candidate.side}: книга недоступна` };
+      return singleLot({ token_id: candidate.token_id, ask: candidate.ask, stake: vStake },
+                       r.mp, dateCap, vBook, candidate.pCons);
+    });
+    const singleExec = selected.exec;
+    const bestPick = selected.candidate
+      ? { ...selected.candidate.vSide, r: selected.candidate.r, side: selected.candidate.side }
+      : null;
+    const picksChecked = selected.checked.map(x => x.reason);
     if (singleExec && bestPick){
       html += `<div class="card" style="border-left:3px solid var(--good)"><b style="color:var(--good-text)">★ ВЕРДИКТ (${modeName}): одна реальная одиночная ставка 5/5</b> — ${esc(bestPick.r.city.name)} (${fmtDateRu(bestPick.r.dateStr)}), ${bestPick.side} на бакет «${esc(bestPick.b.title)}», ${singleExec.shares.toFixed(1)} акций по ≤${fmtC(singleExec.limit)} за $${singleExec.usd.toFixed(2)} — первая карточка ниже.</div>`;
     } else {

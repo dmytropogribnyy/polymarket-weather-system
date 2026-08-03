@@ -1672,10 +1672,8 @@
       },
       "probability": 0.50,
       "expected": {
-        "ok": true,
-        "shares": 9.5,
-        "usd": 1.00,
-        "limit": 0.10
+        "ok": false,
+        "reason_contains": "нет объёма"
       }
     },
     {
@@ -1725,9 +1723,10 @@
       "probability": 0.40,
       "expected": {
         "ok": true,
-        "shares": 11.4,
-        "usd": 3.00,
-        "limit": 0.25
+        "shares": 3.9,
+        "usd": 1.02,
+        "limit": 0.25,
+        "ev_final": 0.5422
       }
     },
     {
@@ -1801,7 +1800,8 @@
       "probability": 0.52,
       "expected": {
         "ok": false,
-        "reason_contains": "EV"
+        "reason_contains": "EV",
+        "ev_final": 0.0146
       }
     },
     {
@@ -1825,10 +1825,78 @@
       },
       "probability": 0.50,
       "expected": {
-        "ok": true,
-        "shares": 3.9,
-        "usd": 1.20,
-        "limit": 0.30
+        "ok": false,
+        "reason_contains": "raw debit"
+      }
+    }
+  ],
+  "web_budget": [
+    {
+      "name": "same date shares one $5 pot",
+      "overall_limit": 15,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 3], ["2026-08-03", 3]],
+      "expected": {
+        "accepted": [true, false],
+        "overall_left": 12,
+        "by_date": {"2026-08-03": 2}
+      }
+    },
+    {
+      "name": "different dates keep separate pots",
+      "overall_limit": 15,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 4], ["2026-08-04", 4]],
+      "expected": {
+        "accepted": [true, true],
+        "overall_left": 7,
+        "by_date": {"2026-08-03": 1, "2026-08-04": 1}
+      }
+    },
+    {
+      "name": "overall limit binds across dates",
+      "overall_limit": 6,
+      "per_date_limit": 5,
+      "reservations": [["2026-08-03", 4], ["2026-08-04", 3]],
+      "expected": {
+        "accepted": [true, false],
+        "overall_left": 2,
+        "by_date": {"2026-08-03": 1, "2026-08-04": 2}
+      }
+    }
+  ],
+  "single_candidates": [
+    {
+      "name": "YES and NO use conservative probability and side token",
+      "picks": [
+        {
+          "r": {"dateStr": "2026-08-03"},
+          "yes": {"conf": 5, "p": 0.70, "pLo": 0.40, "pHi": 0.80, "ask": 0.20,
+                  "cost": 0.21, "b": {"tidYes": "yes-token", "tidNo": "no-token"}},
+          "no": {"conf": 5, "p": 0.70, "pLo": 0.40, "pHi": 0.80, "ask": 0.30,
+                 "cost": 0.31, "b": {"tidYes": "yes-token", "tidNo": "no-token"}}
+        }
+      ],
+      "expected": [
+        {"side": "YES", "token_id": "yes-token", "pBase": 0.70, "pCons": 0.40},
+        {"side": "NO", "token_id": "no-token", "pBase": 0.30, "pCons": 0.20}
+      ]
+    }
+  ],
+  "single_selection": [
+    {
+      "name": "later valid candidate survives first rejection",
+      "overall_limit": 5,
+      "per_date_limit": 5,
+      "candidates": [
+        {"dateStr": "2026-08-03", "result": {"ok": false, "reason": "first rejected"}},
+        {"dateStr": "2026-08-03", "result": {"ok": true, "usd": 1.20}}
+      ],
+      "expected": {
+        "selected_index": 1,
+        "checked": 1,
+        "overall_left": 3.80,
+        "by_date": {"2026-08-03": 3.80}
       }
     }
   ]

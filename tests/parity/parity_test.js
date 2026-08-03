@@ -206,16 +206,49 @@ out.single_lot = cases.single_lot.map(c => {
   const mp = mpOf(c.mp);
   const book = c.book;
   const pick = c.pick;
-  const result = C.singleLot(pick, mp, c.budget_left, book, c.probability || null, null);
+  const result = C.singleLot(pick, mp, c.budget_left, book, c.probability ?? null);
   return {
     name: c.name,
     ok: result.ok,
     shares: result.ok ? r(result.shares, 1) : null,
     usd: result.ok ? r(result.usd, 2) : null,
     limit: result.ok ? r(result.limit, 2) : null,
-    ev_final: result.ok && result.ev_final != null ? r(result.ev_final, 4) : null,
+    ev_final: result.ev_final != null ? r(result.ev_final, 4) : null,
     reason: result.ok ? null : result.reason
   };
 });
 
-process.stdout.write(JSON.stringify(out, null, 1));
+out.web_budget = cases.web_budget.map(c => {
+  const budget = C.createRunBudget(c.overall_limit, c.per_date_limit);
+  const accepted = c.reservations.map(([dateStr, usd]) => budget.reserve(dateStr, usd));
+  return { name: c.name, accepted, snapshot: budget.snapshot() };
+});
+
+out.single_candidates = cases.single_candidates.map(c => ({
+  name: c.name,
+  candidates: C.singleCandidates(c.picks).map(x => ({
+    side: x.side, token_id: x.token_id, pBase: r(x.pBase, 6), pCons: r(x.pCons, 6)
+  }))
+}));
+
+async function finish(){
+  out.single_selection = [];
+  for (const c of cases.single_selection){
+    const budget = C.createRunBudget(c.overall_limit, c.per_date_limit);
+    const candidates = c.candidates.map(x => ({ dateStr: x.dateStr, result: x.result }));
+    const selected = await C.findExecutableSingle(candidates, budget,
+      async candidate => Object.assign({}, candidate.result));
+    out.single_selection.push({
+      name: c.name,
+      selected_index: selected.index,
+      checked: selected.checked.length,
+      snapshot: budget.snapshot()
+    });
+  }
+  process.stdout.write(JSON.stringify(out, null, 1));
+}
+
+finish().catch(err => {
+  process.stderr.write(String(err && err.stack || err));
+  process.exitCode = 1;
+});

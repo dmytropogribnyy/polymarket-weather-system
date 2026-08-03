@@ -149,6 +149,24 @@ class TestPlanWeather(unittest.TestCase):
         w.plan_weather([], [pick], alloc, fetch=fetch)
         self.assertGreater(pick["stake"], 0.0)
 
+    def test_single_pick_uses_conservative_probability_for_executed_ev(self):
+        """A strong base estimate cannot override weak worst-case executed EV."""
+        pick = dict(city="Чэнду", date="2026-08-03", side="YES", stake=2.0,
+                    conf=5, ev=0.30, mp=MP, token_id="tok-conservative", ask=0.50,
+                    p=0.70, pLo=0.52, pHi=0.75, p_cons=0.52)
+        alloc = w.BudgetAllocator()
+        fetch = FakeFetch({
+            "book?token_id=tok-conservative": dict(
+                asks=[{"price": "0.50", "size": "1000"}],
+                min_order_size="1", tick_size="0.01")
+        })
+
+        w.plan_weather([], [pick], alloc, fetch=fetch)
+
+        self.assertEqual(pick["stake"], 0.0)
+        self.assertIn("EV", pick["budget_block"])
+        self.assertEqual(alloc.snapshot()["allocations"], [])
+
     def test_single_pick_without_mp_must_fail_closed(self):
         """Одиночная ставка без mp должна быть отклонена (fail-closed)."""
         pick = dict(city="Чэнду", date="2026-08-03", stake=1.5, conf=4, ev=0.20)
