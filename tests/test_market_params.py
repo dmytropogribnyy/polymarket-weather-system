@@ -72,6 +72,15 @@ class TestMarketParams(unittest.TestCase):
         self.assertIsNotNone(mp, "каноническое расписание должно разбираться")
         self.assertAlmostEqual(mp.fee_rate, 0.05, places=12)
 
+    def test_live_weather_exponent_one_is_supported(self):
+        """Live weather schedule uses e=1 for rate*p*(1-p), per protocol docs."""
+        m = market(taker_base_fee=None)
+        m.update(feesEnabled=True,
+                 feeSchedule={"rate": 0.05, "exponent": 1, "takerOnly": True})
+        mp = w.parse_market_params(m)
+        self.assertIsNotNone(mp, "live weather fee schedule must not block every market")
+        self.assertAlmostEqual(mp.fee_rate, 0.05, places=12)
+
     def test_fees_disabled_gives_zero_rate(self):
         """feesEnabled=False явно разрешает нулевую ставку."""
         m = market(taker_base_fee=None)

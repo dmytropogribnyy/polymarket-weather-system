@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily Polymarket weather job: recalibrate stations -> screen tomorrow &
 day-after -> print JSON report. Self-contained, stdlib only."""
-import hashlib, json, math, re, time, urllib.request, urllib.parse
+import hashlib, json, math, os, re, time, urllib.request, urllib.parse
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
@@ -218,7 +218,7 @@ def _fee_rate_canonical(m):
     Если feesEnabled=True, а расписание не читается или содержит неподдерживаемые
     значения — (None, True) → fail-closed.
     
-    Поддерживаемая модель: exponent=2 (квадратичная кривая rate*price*(1-price)),
+    Поддерживаемая модель: exponent=1 (rate*price^1*(1-price)^1),
     takerOnly=True (одинаковая комиссия тейкера/мейкера не поддерживается)."""
     fees_enabled = m.get("feesEnabled")
     if fees_enabled is None:
@@ -229,9 +229,10 @@ def _fee_rate_canonical(m):
     rate = _num(schedule, "rate")
     if rate is None:
         return None, True                    # включено, но rate отсутствует
-    # Проверяем exponent: если присутствует, обязан быть 2 (квадратичная кривая)
+    # Polymarket задаёт степень каждому множителю: p^e*(1-p)^e. Для текущей
+    # документированной погодной кривой p*(1-p) канонический exponent равен 1.
     exponent = schedule.get("exponent")
-    if exponent is not None and exponent != 2:
+    if exponent is not None and exponent != 1:
         return None, True                    # неподдерживаемый exponent
     # Проверяем takerOnly: если присутствует, обязан быть True
     taker_only = schedule.get("takerOnly")
@@ -1003,8 +1004,7 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
             t["stake"] = granted
     return approved
 
-PM_WALLET = ""  # публичный адрес кошелька Polymarket (0x...); пустой = блок портфеля выключен.
-                # В публичном репозитории всегда пусто — адрес живёт только в приватном тексте задачи.
+PM_WALLET = ""  # Не хранить адрес владельца в публичном репозитории.
 
 def _bucket_of(title):
     m = re.search(r"(-?\d+(?:--?\d+)?°[CF](?: or (?:below|higher|above))?)", title or "")
@@ -1017,7 +1017,9 @@ def portfolio_scan(wallet=None, fetch=None):
     Отдельно — уже вложенное по КАЖДОМУ дню погоды (`spent_by_weather_date`): это
     вход в общий распределитель бюджета."""
     fetch = fetch or get
-    wallet = wallet or PM_WALLET
+    # Явный аргумент удобен для библиотечного вызова; scheduled-задача передаёт
+    # публичный адрес через окружение. Ни ключей, ни подписи для data-api не нужно.
+    wallet = wallet or os.environ.get("PM_WALLET", "").strip() or PM_WALLET
     if not wallet: return None
     pos = fetch(f"https://data-api.polymarket.com/positions?user={wallet}")
     try: value = round(float(fetch(f"https://data-api.polymarket.com/value?user={wallet}")[0]["value"]), 2)
@@ -1239,15 +1241,7 @@ def screen(slug, cal, dates, kind="max", fetch=None):
             RES_FAILS.append(f"{eslug}: {det['reason']}"); continue
         tier = cal_tier(cal, lead)
         bucket_markets = [m for m in ev["markets"] if parse_bucket(m.get("groupItemTitle"))]
-        # торговые параметры КОНКРЕТНОГО рынка: комиссия, шаг цены, минимальный ордер
-        mp = event_params(bucket_markets, fetch)
-        if mp is None:
-            PARAM_FAILS.append(f"{eslug}: торговые параметры рынка не подтверждены"); continue
         vol = float(ev.get("volume") or 0)
-        allasks = [m.get("bestAsk") for m in bucket_markets]
-        if len(allasks) >= 5 and all(a is not None for a in allasks):
-            SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
-                               sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
         volpen = 1 if vol < 30000 else 0
         day = {"all": [], "ec": [], "gf": [], "ic": [], "gm": []}
         for k in keys:
@@ -1297,9 +1291,18 @@ def screen(slug, cal, dates, kind="max", fetch=None):
             r["pS"], r["pLoS"], r["pHiS"] = sh["p"], sh["pLo"], sh["pHi"]
         PAPER_FORECASTS.append(make_paper_forecast(
             eslug, slug, ru, ds, lead, kind, unit, icao, tier, det, rows))
-        # Ликвидность запрещает реальную рекомендацию, но не должна создавать
-        # survivorship bias в бумажной оценке полной модели.
+        # Ликвидность и торговые параметры запрещают реальную рекомендацию, но
+        # не должны создавать survivorship bias в оценке вероятностной модели.
         if vol < 10000: continue
+        # Торговые параметры КОНКРЕТНОГО рынка нужны только после того, как
+        # независимый бумажный снимок уже сохранён. Торговля остаётся fail-closed.
+        mp = event_params(bucket_markets, fetch)
+        if mp is None:
+            PARAM_FAILS.append(f"{eslug}: торговые параметры рынка не подтверждены"); continue
+        allasks = [m.get("bestAsk") for m in bucket_markets]
+        if len(allasks) >= 5 and all(a is not None for a in allasks):
+            SLOPPY.append(dict(city=ru, date=ds, sum_ask=round(sum(allasks), 3),
+                               sum_allin=round(sum(allin(a, mp) for a in allasks), 3), eslug=eslug))
         crows = []
         for r in rows:
             bb, ba, mid = r["bb"], r["ba"], r["mid"]

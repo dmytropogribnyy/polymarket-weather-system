@@ -46,7 +46,7 @@ class WebCoreGapsTest(unittest.TestCase):
         code = """
 const m = {
   feesEnabled: true,
-  feeSchedule: { rate: 0.05, exponent: 2, takerOnly: true },
+  feeSchedule: { rate: 0.05, exponent: 1, takerOnly: true },
   taker_base_fee: 700,  // конфликт: canonical 5% vs legacy 7%
   minimum_tick_size: 0.01,
   minimum_order_size: 1
@@ -57,6 +57,20 @@ console.log(JSON.stringify(p));
         out = self.run_js_core(code)
         result = json.loads(out)
         self.assertIsNone(result, "Конфликт canonical+legacy должен дать null")
+
+    def test_live_weather_exponent_one_is_supported(self):
+        code = """
+const p = C.parseMarketParams({
+  feesEnabled: true,
+  feeSchedule: { rate: 0.05, exponent: 1, takerOnly: true },
+  minimum_tick_size: 0.01,
+  minimum_order_size: 1
+});
+console.log(JSON.stringify(p));
+"""
+        result = json.loads(self.run_js_core(code))
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["fee_rate"], 0.05, places=12)
 
     def test_combo_lots_raw_cost_exceeds_raw_cap_is_rejected(self):
         """comboLots должен сравнивать RAW minTotal с RAW cap, не centsUp(minTotal) vs cap."""
