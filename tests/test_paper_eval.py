@@ -83,6 +83,13 @@ class TestScoring(unittest.TestCase):
         self.assertAlmostEqual(tail["expected_model"], 0.09)
 
 
+class TestOutcomeLoading(unittest.TestCase):
+    def test_missing_outcomes_ledger_is_empty_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing = os.path.join(td, "settlements.jsonl")
+            self.assertEqual(pe._load_outcomes(missing), {})
+
+
 class TestLedger(unittest.TestCase):
     def test_append_is_idempotent_but_same_event_time_cannot_change(self):
         with tempfile.TemporaryDirectory() as td:
