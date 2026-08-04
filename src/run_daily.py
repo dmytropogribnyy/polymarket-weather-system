@@ -9,8 +9,8 @@ import argparse
 import fcntl
 import hashlib
 import json
+import multiprocessing
 import os
-import signal
 import sys
 import tempfile
 import threading
@@ -166,30 +166,87 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def _child_entry(conn, output, status, lock, workers,
+                 include_tier_c, builder):
+    try:
+        result = run_once(output, status, lock, workers,
+                          builder=builder,
+                          include_tier_c=include_tier_c)
+    except AlreadyRunning as exc:
+        message = dict(code=75, payload=dict(
+            state="already_running", error=str(exc)))
+    except BaseException as exc:
+        message = dict(code=1, payload=dict(
+            state="failed", error=f"{type(exc).__name__}: {exc}"))
+    else:
+        message = dict(code=0, payload=result)
+    try:
+        conn.send(message)
+    finally:
+        conn.close()
+
+
+def run_supervised(output, status, lock, workers=None,
+                   include_tier_c=False, max_runtime_seconds=1500,
+                   builder=None):
+    """Run the scan in a killable child process with a real deadline."""
+    started = utc_now()
+    context = multiprocessing.get_context("fork")
+    parent_conn, child_conn = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_child_entry,
+        args=(child_conn, output, status, lock, workers,
+              include_tier_c, builder),
+        name="wx-daily-scan")
+    try:
+        process.start()
+    except BaseException as exc:
+        child_conn.close()
+        parent_conn.close()
+        failed = dict(state="failed", pid=os.getpid(),
+                      started_at=started, finished_at=utc_now(),
+                      output=os.path.abspath(output),
+                      error=f"{type(exc).__name__}: {exc}")
+        _atomic_json(status, failed)
+        return 1, failed
+    child_conn.close()
+    deadline = max(1.0, float(max_runtime_seconds))
+    process.join(deadline)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=2.0)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        parent_conn.close()
+        failed = dict(
+            state="failed", pid=os.getpid(), started_at=started,
+            finished_at=utc_now(), output=os.path.abspath(output),
+            error=("TimeoutError: daily scan exceeded "
+                   f"{max_runtime_seconds} seconds"))
+        _atomic_json(status, failed)
+        return 1, failed
+
+    if parent_conn.poll(0.5):
+        message = parent_conn.recv()
+    else:
+        message = dict(code=1, payload=dict(
+            state="failed",
+            error=("ChildProcessError: scan child exited "
+                   f"with code {process.exitcode} without a result")))
+    parent_conn.close()
+    return message["code"], message["payload"]
+
+
 def main(argv=None):
     args = parse_args(argv)
-    def deadline(_signum, _frame):
-        raise TimeoutError(f"daily scan exceeded {args.max_runtime_seconds} seconds")
-
-    previous_handler = signal.signal(signal.SIGALRM, deadline)
-    signal.alarm(max(1, args.max_runtime_seconds))
-    try:
-        try:
-            result = run_once(args.output, args.status, args.lock, args.workers,
-                              include_tier_c=args.include_tier_c)
-        except AlreadyRunning as exc:
-            print(json.dumps({"state": "already_running", "error": str(exc)}, ensure_ascii=False),
-                  file=sys.stderr)
-            return 75
-        except BaseException as exc:
-            print(json.dumps({"state": "failed", "error": f"{type(exc).__name__}: {exc}"},
-                             ensure_ascii=False), file=sys.stderr)
-            return 1
-        print(json.dumps(result, ensure_ascii=False))
-        return 0
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous_handler)
+    code, payload = run_supervised(
+        args.output, args.status, args.lock, args.workers,
+        include_tier_c=args.include_tier_c,
+        max_runtime_seconds=args.max_runtime_seconds)
+    print(json.dumps(payload, ensure_ascii=False),
+          file=(sys.stdout if code == 0 else sys.stderr))
+    return code
 
 
 if __name__ == "__main__":

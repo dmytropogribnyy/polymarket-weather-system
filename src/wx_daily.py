@@ -1115,6 +1115,8 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
         c["stake"] = granted
         approved[kind] = c
     for t in sorted(picks, key=lambda t: -t.get("conf", 0)*t.get("ev", 0)):
+        t["execution_approved"] = False
+        t.pop("execution", None)
         want = t.get("stake") or 0.0
         mp_t = t.get("mp")
         wdate = t.get("date")
@@ -1158,6 +1160,8 @@ def plan_weather(combos, picks, allocator, fetch=None, min_ev=COMBO_MIN_EV):
             t["budget_block"] = f"остаток бюджета ${granted:.2f} < исполнимая сумма ${exec_usd:.2f}"
         else:
             t["stake"] = granted
+            t["execution_approved"] = True
+            t["execution"] = exec_result
     return approved
 
 PM_WALLET = ""  # Не хранить адрес владельца в публичном репозитории.
@@ -1560,6 +1564,27 @@ def calibration_refresh_plan(slugs, previous, on_date, refresh_days=7,
     return refresh, carry
 
 
+def execute_weather_candidates(combos, picks, allocator, fetch=None):
+    """Run the executable-book and shared-budget gate for every candidate
+    that can later become a report verdict."""
+    return plan_weather(combos, picks, allocator, fetch=fetch)
+
+
+def select_weather_verdict(combo, picks, series=None):
+    """Return a BET verdict only from explicitly executed and reserved state."""
+    if combo is not None:
+        return dict(combo, kind="серия-комбо" if combo is series else "шанс-комбо")
+    pick = next((candidate for candidate in picks
+                 if candidate.get("conf", 0) >= 5
+                 and candidate.get("robust")
+                 and candidate.get("execution_approved")
+                 and (candidate.get("stake") or 0) > 0), None)
+    if pick is None:
+        return None
+    return dict({key: value for key, value in pick.items() if key != "tid"},
+                kind="одиночная")
+
+
 def build_report(fetch=None, workers=None, include_tier_c=False,
                  progress=None, prior_report=None):
     started = time.monotonic()
@@ -1729,7 +1754,7 @@ def build_report(fetch=None, workers=None, include_tier_c=False,
     allocator = BudgetAllocator(spent_total=(portfolio or {}).get("spent_today", 0.0),
                                 spent_by_date=(portfolio or {}).get("spent_by_weather_date", {}))
     # один проход по ВСЕМ кандидатам: лоты → вердикт → резерв бюджета
-    approved = plan_weather(combo_top, picks[:12], allocator, fetch=fetch)
+    approved = execute_weather_candidates(combo_top, picks, allocator, fetch=fetch)
     # серийная ставка дня: только среди ОДОБРЕННЫХ по исполнимой экономике
     series = next((c for c in sorted([x for x in approved.values() if x], key=lambda c: -(c["p_win"]*c["ev"]))
                    if c["p_win"] >= 0.60 and c["ev"] >= 0.20 and c["tier"] in ("A", "B")
@@ -1742,11 +1767,7 @@ def build_report(fetch=None, workers=None, include_tier_c=False,
 
     # «Вердикт дня»: по одной самой реальной ставке на категорию — или честный пропуск
     def wx_verdict(combo, ps):
-        if combo is not None:
-            return dict(combo, kind="серия-комбо" if combo is series else "шанс-комбо")
-        p = next((t for t in ps if t["conf"] >= 5 and t.get("robust") and (t.get("stake") or 0) > 0), None)
-        if p: return dict({k: v for k, v in p.items() if k not in ("tid",)}, kind="одиночная")
-        return None
+        return select_weather_verdict(combo, ps, series=series)
     verdicts = dict(
         max=wx_verdict(approved["max"], [t for t in picks if "(мин)" not in t["city"]]),
         min=wx_verdict(approved["min"], [t for t in picks if "(мин)" in t["city"]]),

@@ -1,62 +1,31 @@
 name: tests
 
+# Тесты обязаны идти на каждый push и pull request: «зелено у меня локально» —
+# не доказательство. Сети в CI нет по замыслу: все внешние API замоканы.
 on:
   push:
     branches: ["**"]
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  issue6-patch-and-verify:
-    if: github.ref == 'refs/heads/fix/issue-6-post-merge-runtime' && github.actor != 'github-actions[bot]'
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: fix/issue-6-post-merge-runtime
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Add RED-first regressions
-        run: python .github/issue6_patch.py write-tests
-
-      - name: Prove RED on post-merge main behavior
-        shell: bash
-        run: |
-          set +e
-          python -m unittest tests.test_issue6_runtime -v
-          rc=$?
-          set -e
-          if [ "$rc" -eq 0 ]; then
-            echo "Expected issue #6 regressions to fail before implementation"
-            exit 1
-          fi
-          echo "RED confirmed: focused regressions fail before implementation"
-
-      - name: Apply bounded issue 6 corrections
-        run: python .github/issue6_patch.py apply
-
-      - name: Full validation
-        shell: bash
-        run: |
-          node tests/parity/check_syntax.js
-          node tests/parity/parity_test.js > /dev/null
-          python -m compileall -q src tests
-          python -m unittest discover -s tests -t . -v
-          git diff --check
-
-      - name: Commit corrected head
-        shell: bash
-        run: |
-          git config user.name "ChatGPT Codex Connector"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Fix post-merge verdict gate and hard runtime deadline"
-          git push origin HEAD:fix/issue-6-post-merge-runtime
+      - name: Синтаксис Python
+        run: python -m compileall -q src tests
+      - name: Синтаксис веб-скринеров
+        run: node tests/parity/check_syntax.js
+      - name: Ядро паритета считается само по себе
+        run: node tests/parity/parity_test.js > /dev/null
+      - name: Весь набор тестов
+        run: python -m unittest discover -s tests -t . -v
