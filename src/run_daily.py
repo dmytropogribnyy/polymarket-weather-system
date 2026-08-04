@@ -101,7 +101,10 @@ def run_once(output, status, lock, workers=None, builder=None,
 
         def stop_heartbeat():
             heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2.0)
+            # A terminal status is written only after the heartbeat has fully
+            # stopped. The parent supervisor remains the hard upper bound if
+            # an underlying filesystem operation itself stalls.
+            heartbeat_thread.join()
 
         def publish_progress(event):
             now_mono = time.monotonic()
@@ -224,16 +227,21 @@ def run_supervised(output, status, lock, workers=None,
             finished_at=utc_now(), output=os.path.abspath(output),
             error=("TimeoutError: daily scan exceeded "
                    f"{max_runtime_seconds} seconds"))
+        # The child is dead before this terminal write; no heartbeat or worker
+        # thread can later overwrite it.
         _atomic_json(status, failed)
         return 1, failed
 
     if parent_conn.poll(0.5):
         message = parent_conn.recv()
     else:
-        message = dict(code=1, payload=dict(
-            state="failed",
+        payload = dict(
+            state="failed", pid=os.getpid(), started_at=started,
+            finished_at=utc_now(), output=os.path.abspath(output),
             error=("ChildProcessError: scan child exited "
-                   f"with code {process.exitcode} without a result")))
+                   f"with code {process.exitcode} without a result"))
+        _atomic_json(status, payload)
+        message = dict(code=1, payload=payload)
     parent_conn.close()
     return message["code"], message["payload"]
 
