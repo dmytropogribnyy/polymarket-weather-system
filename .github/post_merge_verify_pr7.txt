@@ -1,0 +1,2 @@
+Verification-only marker for PR #7 post-merge CI. This branch will not be merged.
+Source baseline: main@19a70c2c59c3033cb41cae5a9ffd0b1484f56a78
