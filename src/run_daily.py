@@ -21,6 +21,9 @@ from datetime import datetime, timezone
 import wx_daily
 
 
+HEARTBEAT_SECONDS = 15.0
+
+
 class AlreadyRunning(RuntimeError):
     pass
 
@@ -90,7 +93,7 @@ def run_once(output, status, lock, workers=None, builder=None,
         heartbeat_stop = threading.Event()
 
         def heartbeat_loop():
-            while not heartbeat_stop.wait(15.0):
+            while not heartbeat_stop.wait(HEARTBEAT_SECONDS):
                 with progress_lock:
                     running["heartbeat_at"] = utc_now()
                     _atomic_json(status, running)
