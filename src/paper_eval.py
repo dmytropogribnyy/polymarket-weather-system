@@ -232,6 +232,8 @@ def read_jsonl(path):
 
 
 def _load_outcomes(path):
+    if not os.path.exists(path):
+        return {}
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh) if path.endswith(".json") else None
     if isinstance(data, dict):
